@@ -1,14 +1,22 @@
-import {app, html, state, click, computed} from "./pico.js"
-function App(){
-  const number = new state(0)
+import {app, html, state, bind_click, bind_value, use_future} from "./pico.js"
+/**
+ * @param {number} ms 
+ */
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+async function profile(){
+  await delay(5000)
+  console.log("done looping")
+  return html`done executing`
+}
+async function App(){
+  const number = new state(1)
   function increment(){
-    number.value+=1
+    number.value += 1
   }
-  const square = computed(()=>number.value**2)
   return html`
-    <button id="button" ${click(increment)}>Click</button>
-    <p>${number}</p>
-    <p>${square}</p>
+    <button id="button" ${bind_click(increment)}>Click</button>
+    <p>${number} hello ${use_future(profile,()=>"loading",()=>"an error occured")}</p>
+    <input ${bind_value(number)}></input>
   `
 }
-const page = new app(App)
+await app.from_async(App)
