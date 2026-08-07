@@ -310,5 +310,5 @@ export function use_future(fn, placeholder_fn, fallback_fn) {
         })
       }
     })
-  return `<div id="pico-element" class="pico-generated-id${id}">${placeholder_fn!==undefined ? placeholder_fn() : ""}<div>`
+  return `<div id="pico-element" class="pico-generated-id${id}">${placeholder_fn!==undefined ? placeholder_fn() : ""}</div>`
 }
