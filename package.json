@@ -1,0 +1,26 @@
+{
+  "name": "picojs",
+  "version": "0.0.1",
+  "description": "A minimal Javascript framework.",
+  "homepage": "https://github.com/xyzdev-code/picojs#readme",
+  "bugs": {
+    "url": "https://github.com/xyzdev-code/picojs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xyzdev-code/picojs.git"
+  },
+  "license": "LGPL-2.1-or-later",
+  "author": "Xiao Yaozi",
+  "type": "module",
+  "main": "src/picojs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@html-eslint/eslint-plugin": "^0.64.0",
+    "eslint": "^10.8.1",
+    "globals": "^17.9.0"
+  }
+}

@@ -1,4 +1,4 @@
-import {app, html, state, bind_click, bind_value, use_future} from "./pico.js"
+import {app, html, state, bindClick, bindValue, useFuture} from "./pico.js"
 async function profile(){
   const res = await fetch("https://code.jquery.com/jquery-2.2.4.min.js")
   const txt = await res.text()
@@ -10,9 +10,11 @@ async function App(){
     number.value += 1
   }
   return html`
-    <button id="button" ${bind_click(increment)}>Click</button>
-    <p>${number} hello ${use_future(profile,()=>"loading",(err)=>`${err}`)}</p>
-    <input ${bind_value(number)}></input>
+    <button id="button" ${bindClick(increment)}>Click</button>
+    <p>${number} hello ${useFuture(profile,()=>"loading",(err)=>`${err}`)}</p>
+    <input ${bindValue(number)}></input>
   `
 }
-await app.from_async(App) 
+
+await app.fromAsync(App) 
+Intl.DurationFormat()

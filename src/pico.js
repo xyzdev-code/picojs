@@ -1,6 +1,3 @@
-/** 
-  * @typedef {string | number | boolean | state<string | number | boolean>} renderable
- */
 /**
  * @template T
  */
@@ -12,11 +9,11 @@ export class state {
   /**
     * @type{(()=>unknown) | undefined}
     */
-  static current_fn = undefined
+  static currentFn = undefined
   /**
     * @private
     */
-  static calling_effects = false
+  static callingEffects = false
   /**
    * @param {T} value 
    */
@@ -44,26 +41,26 @@ export class state {
     * @returns{T}
     */
   get value() {
-    if (state.current_fn && state.calling_effects === false) {
-      this.dependencies.push(state.current_fn)
+    if (state.currentFn && state.callingEffects === false) {
+      this.dependencies.push(state.currentFn)
     }
     return this._value
   }
   /**
-    * @param {T} new_value 
+    * @param {T} newValue 
     */
-  set value(new_value) {
-    this._value = new_value
-    state.calling_effects = true
+  set value(newValue) {
+    this._value = newValue
+    state.callingEffects = true
     for (const dependency of this.dependencies) {
       dependency()
     }
-    if (app.is_mounted) {
+    if (app.isMounted) {
       for (const el of document.querySelectorAll(`.pico-state-id${this.id}`)) {
         el.textContent = /**@type {string | null}*/ (this._value)
       }
     }
-    state.calling_effects = false
+    state.callingEffects = false
   }
   get_render_string() {
     return `<span id="pico-element" class="pico-state-id${this.id}">${this._value}</span>`
@@ -73,12 +70,12 @@ export class state {
  * @param {()=>unknown} fn 
  */
 export function effect(fn) {
-  function internal_effect() {
-    state.current_fn = internal_effect
+  function internalEffect() {
+    state.currentFn = internalEffect
     fn()
-    state.current_fn = undefined
+    state.currentFn = undefined
   }
-  internal_effect()
+  internalEffect()
 }
 /**
   * @template T
@@ -88,9 +85,9 @@ export function effect(fn) {
 export function computed(fn) {
   const internal_value = /** @type {state<T>} */ (new state(undefined))
   function internal_effect() {
-    state.current_fn = internal_effect
+    state.currentFn = internal_effect
     internal_value.value = fn()
-    state.current_fn = undefined
+    state.currentFn = undefined
   }
   internal_effect()
   return internal_value
@@ -116,15 +113,15 @@ export class app {
   /** 
     * @type {Array<()=>unknown>}
     */
-  static on_mount_callbacks = []
-  static event_listener_id = 0
-  static is_mounted = false
-  static generated_component_id = 0
+  static onMountCallbacks = []
+  static eventListenerId = 0
+  static isMounted = false
+  static generatedComponentId = 0
   /**
    * @param {()=>Promise<string>} async_app_component 
    * @returns {Promise<app>}
    */
-  static async from_async(async_app_component) {
+  static async fromAsync(async_app_component) {
     const res = await async_app_component()
     return new app(() => res)
   }
@@ -140,40 +137,52 @@ export class app {
    */
   constructor(app_component) {
     document.body.innerHTML = app_component()
-    for (const cb of app.on_mount_callbacks) {
+    for (const cb of app.onMountCallbacks) {
       cb()
     }
-    app.is_mounted = true
+    app.isMounted = true
   }
 }
 /**
  * @param {()=>unknown} cb 
  */
-export function on_mount(cb) {
-  app.on_mount_callbacks.push(cb)
+export function onMount(cb) {
+  if (!app.isMounted) {
+    app.onMountCallbacks.push(cb)
+  } else {
+    cb()
+  }
 }
 /**
  * @param {()=>unknown} cb 
  * @returns {string}
  */
-export function bind_click(cb) {
-  const local_id = app.event_listener_id
-  app.event_listener_id += 1
-  app.on_mount_callbacks.push(() => {
+export function bindClick(cb) {
+  const local_id = app.eventListenerId
+  app.eventListenerId += 1
+  if (app.isMounted) {
     document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("click", cb)
-  })
+  } else {
+    app.onMountCallbacks.push(() => {
+      document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("click", cb)
+    })
+  }
   return `data-pico-listener${local_id}`
 }
 /**
  * @param {()=>unknown} cb 
  * @returns {string}
  */
-export function bind_mouseover(cb) {
-  const local_id = app.event_listener_id
-  app.event_listener_id += 1
-  app.on_mount_callbacks.push(() => {
+export function bindMouseover(cb) {
+  const local_id = app.eventListenerId
+  app.eventListenerId += 1
+  if (app.isMounted) {
     document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("mouseover", cb)
-  })
+  } else {
+    app.onMountCallbacks.push(() => {
+      document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("mouseover", cb)
+    })
+  }
   return `data-pico-listener${local_id}`
 }
 
@@ -182,115 +191,141 @@ export function bind_mouseover(cb) {
  * @returns {string}
  */
 export function bind_mouseenter(cb) {
-  const local_id = app.event_listener_id
-  app.event_listener_id += 1
-  app.on_mount_callbacks.push(() => {
-    document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("mouseenter", cb)
-  })
-  return `data-pico-listener${local_id}`
+  const localId = app.eventListenerId
+  app.eventListenerId += 1
+  if (app.isMounted) {
+    document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("mouseenter", cb)
+  } else {
+    app.onMountCallbacks.push(() => {
+      document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("mouseenter", cb)
+    })
+  }
+  return `data-pico-listener${localId}`
 }
 
 /**
  * @param {()=>unknown} cb 
  * @returns {string}
  */
-export function bind_mousedown(cb) {
-  const local_id = app.event_listener_id
-  app.event_listener_id += 1
-  app.on_mount_callbacks.push(() => {
-    document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("mousedown", cb)
+export function bindMousedown(cb) {
+  const localId = app.eventListenerId
+  app.eventListenerId += 1
+  app.onMountCallbacks.push(() => {
+    document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("mousedown", cb)
   })
-  return `data-pico-listener${local_id}`
+  return `data-pico-listener${localId}`
 }
 
 /**
  * @param {()=>unknown} cb 
  * @returns {string}
  */
-export function bind_mouseup(cb) {
-  const local_id = app.event_listener_id
-  app.event_listener_id += 1
-  app.on_mount_callbacks.push(() => {
-    document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("mouseup", cb)
+export function bindMouseup(cb) {
+  const localId = app.eventListenerId
+  app.eventListenerId += 1
+  app.onMountCallbacks.push(() => {
+    document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("mouseup", cb)
   })
-  return `data-pico-listener${local_id}`
+  return `data-pico-listener${localId}`
 }
 
 /**
  * @param {()=>unknown} cb 
  * @returns {string}
  */
-export function bind_dblclick(cb) {
-  const local_id = app.event_listener_id
-  app.event_listener_id += 1
-  app.on_mount_callbacks.push(() => {
-    document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("dblclick", cb)
-  })
-  return `data-pico-listener${local_id}`
+export function bindDblclick(cb) {
+  const localId = app.eventListenerId
+  app.eventListenerId += 1
+  if (app.isMounted) {
+    document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("dblclick", cb)
+  } else {
+    app.onMountCallbacks.push(() => {
+      document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("dblclick", cb)
+    })
+  }
+  return `data-pico-listener${localId}`
 }
 /**
  * @param {(is_checked: boolean)=>unknown} cb 
  * @returns {string}
  */
-export function bind_checked(cb) {
-  const local_id = app.event_listener_id
-  app.event_listener_id += 1
-  app.on_mount_callbacks.push(() => {
+export function bindChecked(cb) {
+  const local_id = app.eventListenerId
+  app.eventListenerId += 1
+  if (app.isMounted) {
     document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("change", (event) => {
       if (/**@type {HTMLInputElement}*/(event.target).checked) {
         cb(/**@type {HTMLInputElement}*/(event.target).checked)
       }
     })
-  })
+  } else {
+    app.onMountCallbacks.push(() => {
+      document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("change", (event) => {
+        if (/**@type {HTMLInputElement}*/(event.target).checked) {
+          cb(/**@type {HTMLInputElement}*/(event.target).checked)
+        }
+      })
+    })
+  }
   return `data-pico-listener${local_id}`
 }
 /**
- * @param {state<string | number>} bound_var 
+ * @param {state<string | number>} boundVar 
  * @returns {string}
  */
-export function bind_value(bound_var) {
-  const local_id = app.event_listener_id
-  app.event_listener_id += 1
-  app.on_mount_callbacks.push(() => {
-    document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("input", (event) => {
-      if (typeof bound_var.value === "string") {
-        bound_var.value = /**@type {HTMLInputElement}*/ (event.target).value
+export function bindValue(boundVar) {
+  const localId = app.eventListenerId
+  app.eventListenerId += 1
+  if (app.isMounted) {
+    document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("input", (event) => {
+      if (typeof boundVar.value === "string") {
+        boundVar.value = /**@type {HTMLInputElement}*/ (event.target).value
       } else {
-        bound_var.value = parseFloat(/**@type {HTMLInputElement}*/(event.target).value)
+        boundVar.value = parseFloat(/**@type {HTMLInputElement}*/(event.target).value)
       }
     })
-  })
-  return `data-pico-listener${local_id}`
+  } else {
+    app.onMountCallbacks.push(() => {
+      document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("input", (event) => {
+        if (typeof boundVar.value === "string") {
+          boundVar.value = /**@type {HTMLInputElement}*/ (event.target).value
+        } else {
+          boundVar.value = parseFloat(/**@type {HTMLInputElement}*/(event.target).value)
+        }
+      })
+    })
+  }
+  return `data-pico-listener${localId}`
 }
 
 /**
- * @param {()=>(renderable | Error)} fn 
- * @param {(err: unknown)=>renderable} fallback_fn
- * @returns {renderable}
+ * @param {()=>(unknown | Error)} fn 
+ * @param {(err: unknown)=>unknown} fallbackFn
+ * @returns {unknown}
  */
-export function use_try(fn, fallback_fn) {
+export function useTry(fn, fallbackFn) {
   try {
-    return /**@type {renderable}*/ (fn())
+    return /**@type {unknown}*/ (fn())
   } catch (err) {
-    return fallback_fn(err)
+    return fallbackFn(err)
   }
 }
 /**
  * @param {()=>Promise<string>} fn 
- * @param {(err: unknown)=>string} fallback_fn 
- * @param {(()=>renderable) | undefined} placeholder_fn
+ * @param {(()=>unknown) | undefined} placeholderFn
+ * @param {(err: unknown)=>string} fallbackFn 
  * @returns {string}
  */
-export function use_future(fn, placeholder_fn, fallback_fn) {
-  const id = app.generated_component_id
+export function useFuture(fn, placeholderFn, fallbackFn) {
+  const id = app.generatedComponentId
   fn()
     .then((value) => {
-      if (app.is_mounted) {
+      if (app.isMounted) {
         for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
           el.innerHTML = value
         }
       } else {
-        app.on_mount_callbacks.push(() => {
+        app.onMountCallbacks.push(() => {
           for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
             el.innerHTML = value
           }
@@ -298,17 +333,17 @@ export function use_future(fn, placeholder_fn, fallback_fn) {
       }
     })
     .catch((err) => {
-      if (app.is_mounted) {
+      if (app.isMounted) {
         for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
-          el.innerHTML = fallback_fn(err)
+          el.innerHTML = fallbackFn(err)
         }
       } else {
-        app.on_mount_callbacks.push(() => {
+        app.onMountCallbacks.push(() => {
           for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
-            el.innerHTML = fallback_fn(err)
+            el.innerHTML = fallbackFn(err)
           }
         })
       }
     })
-  return `<div id="pico-element" class="pico-generated-id${id}">${placeholder_fn!==undefined ? placeholder_fn() : ""}</div>`
+  return `<div id="pico-element" class="pico-generated-id${id}">${placeholderFn !== undefined ? placeholderFn() : ""}</div>`
 }
