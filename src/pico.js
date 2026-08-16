@@ -1,3 +1,4 @@
+const PICO_ARRAY_MUTATORS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin'])
 /**
  * @template T
  */
@@ -11,9 +12,74 @@ export class state {
     */
   static currentFn = undefined
   /**
-    * @private
+    * @package
     */
   static callingEffects = false
+  /**
+   * @template U
+   * @param {Array<U>} arr 
+   * @returns {Array<U>}
+   */
+  static from(arr) {
+    /**
+     * @type {Array<()=>unknown>}
+     */
+    const dependencies = []
+    /**
+     * @type {ProxyHandler<Array<U>>}
+     */
+    const handler = {
+      get(target, prop, receiver) {
+        console.log(target, prop)
+        const value = Reflect.get(target, prop, receiver)
+        if (typeof value === "function" && typeof prop === "string") {
+          if (PICO_ARRAY_MUTATORS.has(prop)) {
+            /** 
+              * @param {Parameters<typeof value>} args
+              */
+            return function(...args) {
+              state.callingEffects = true
+              try {
+                const result = value.apply(target, args)
+                for (const dependency of dependencies) {
+                  dependency()
+                }
+                return result
+              } finally {
+                state.callingEffects = false
+              }
+            }
+          }
+          return value.bind(receiver)
+        }
+        console.log(target)
+        if (state.currentFn !== undefined && state.callingEffects === false) {
+          dependencies.push(state.currentFn)
+        }
+        return value
+      },
+      set(target, prop, value, receiver) {
+        const result = Reflect.set(target, prop, value, receiver)
+        state.callingEffects = true
+        for (const dependency of dependencies) {
+          dependency()
+        }
+        state.callingEffects = false
+        return result
+      },
+      deleteProperty(target, prop) {
+        const result = Reflect.deleteProperty(target, prop)
+        state.callingEffects = true
+        for (const dependency of dependencies) {
+          dependency()
+        }
+        state.callingEffects = false
+        return result
+      }
+    }
+
+    return new Proxy(arr, handler)
+  }
   /**
    * @param {T} value 
    */
@@ -32,16 +98,24 @@ export class state {
      */
     this.id = state.id
     state.id++
-    /**
-     * @type {T}
-     */
-    this.__unsafe_raw_value = this.value
+  }
+  /** 
+    * @returns {T}
+    */
+  get __unsafe_raw_value() {
+    return this._value
+  }
+  /** 
+    * @param {T} newValue 
+    */
+  set __unsafe_raw_value(newValue) {
+    this._value = newValue
   }
   /**
     * @returns{T}
     */
   get value() {
-    if (state.currentFn && state.callingEffects === false) {
+    if (state.currentFn !== undefined && state.callingEffects === false) {
       this.dependencies.push(state.currentFn)
     }
     return this._value
@@ -52,17 +126,30 @@ export class state {
   set value(newValue) {
     this._value = newValue
     state.callingEffects = true
-    for (const dependency of this.dependencies) {
-      dependency()
-    }
-    if (app.isMounted) {
-      for (const el of document.querySelectorAll(`.pico-state-id${this.id}`)) {
-        el.textContent = /**@type {string | null}*/ (this._value)
+    try {
+      if (app.isMounted) {
+        for (const el of document.querySelectorAll(`.pico-state-id${this.id}`)) {
+          el.textContent = /**@type {string | null}*/ (this._value)
+        }
+      } else {
+        app.onMountCallbacks.push(() => {
+          for (const el of document.querySelectorAll(`.pico-state-id${this.id}`)) {
+            el.textContent = /**@type {string | null}*/ (this._value)
+          }
+        })
       }
+      for (const dependency of this.dependencies) {
+        dependency()
+      }
+    } finally {
+      state.callingEffects = false
     }
-    state.callingEffects = false
   }
-  get_render_string() {
+  /**
+   * @package
+   * @returns {string}
+   */
+  getRenderString() {
     return `<span id="pico-element" class="pico-state-id${this.id}">${this._value}</span>`
   }
 }
@@ -94,7 +181,7 @@ export function computed(fn) {
 }
 /**
  * @param {TemplateStringsArray} strings 
- * @param {(string | number | boolean | state<unknown>)[]} args 
+ * @param {unknown[]} args 
  * @returns {string}
  */
 export function html(strings, ...args) {
@@ -102,7 +189,7 @@ export function html(strings, ...args) {
   for (let i = 0; i < args.length; i++) {
     str += strings[i]
     if (args[i] instanceof state) {
-      str += /** @type {state<unknown>} */ (args[i]).get_render_string()
+      str += /** @type {state<unknown>} */ (args[i]).getRenderString()
     } else {
       str += args[i]
     }
@@ -117,6 +204,7 @@ export class app {
   static eventListenerId = 0
   static isMounted = false
   static generatedComponentId = 0
+  static listId = 0
   /**
    * @param {()=>Promise<string>} async_app_component 
    * @returns {Promise<app>}
@@ -161,13 +249,13 @@ export function bindClick(cb) {
   const local_id = app.eventListenerId
   app.eventListenerId += 1
   if (app.isMounted) {
-    document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("click", cb)
+    document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("click", cb)
   } else {
     app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("click", cb)
+      document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("click", cb)
     })
   }
-  return `data-pico-listener${local_id}`
+  return `data-pico-listener="${local_id}"`
 }
 /**
  * @param {()=>unknown} cb 
@@ -177,30 +265,30 @@ export function bindMouseover(cb) {
   const local_id = app.eventListenerId
   app.eventListenerId += 1
   if (app.isMounted) {
-    document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("mouseover", cb)
+    document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("mouseover", cb)
   } else {
     app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("mouseover", cb)
+      document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("mouseover", cb)
     })
   }
-  return `data-pico-listener${local_id}`
+  return `data-pico-listener="${local_id}"`
 }
 
 /**
  * @param {()=>unknown} cb 
  * @returns {string}
  */
-export function bind_mouseenter(cb) {
+export function bindMouseenter(cb) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
   if (app.isMounted) {
-    document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("mouseenter", cb)
+    document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mouseenter", cb)
   } else {
     app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("mouseenter", cb)
+      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mouseenter", cb)
     })
   }
-  return `data-pico-listener${localId}`
+  return `data-pico-listener="${localId}"`
 }
 
 /**
@@ -210,10 +298,14 @@ export function bind_mouseenter(cb) {
 export function bindMousedown(cb) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
-  app.onMountCallbacks.push(() => {
-    document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("mousedown", cb)
-  })
-  return `data-pico-listener${localId}`
+  if (app.isMounted) {
+    document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mousedown", cb)
+  } else {
+    app.onMountCallbacks.push(() => {
+      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mousedown", cb)
+    })
+  }
+  return `data-pico-listener="${localId}"`
 }
 
 /**
@@ -223,10 +315,14 @@ export function bindMousedown(cb) {
 export function bindMouseup(cb) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
-  app.onMountCallbacks.push(() => {
-    document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("mouseup", cb)
-  })
-  return `data-pico-listener${localId}`
+  if (app.isMounted) {
+    document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mouseup", cb)
+  } else {
+    app.onMountCallbacks.push(() => {
+      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mouseup", cb)
+    })
+  }
+  return `data-pico-listener="${localId}"`
 }
 
 /**
@@ -237,13 +333,13 @@ export function bindDblclick(cb) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
   if (app.isMounted) {
-    document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("dblclick", cb)
+    document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("dblclick", cb)
   } else {
     app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("dblclick", cb)
+      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("dblclick", cb)
     })
   }
-  return `data-pico-listener${localId}`
+  return `data-pico-listener="${localId}"`
 }
 /**
  * @param {(is_checked: boolean)=>unknown} cb 
@@ -253,21 +349,21 @@ export function bindChecked(cb) {
   const local_id = app.eventListenerId
   app.eventListenerId += 1
   if (app.isMounted) {
-    document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("change", (event) => {
+    document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("change", (event) => {
       if (/**@type {HTMLInputElement}*/(event.target).checked) {
         cb(/**@type {HTMLInputElement}*/(event.target).checked)
       }
     })
   } else {
     app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener${local_id}]`)?.addEventListener("change", (event) => {
+      document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("change", (event) => {
         if (/**@type {HTMLInputElement}*/(event.target).checked) {
           cb(/**@type {HTMLInputElement}*/(event.target).checked)
         }
       })
     })
   }
-  return `data-pico-listener${local_id}`
+  return `data-pico-listener="${local_id}"`
 }
 /**
  * @param {state<string | number>} boundVar 
@@ -277,7 +373,7 @@ export function bindValue(boundVar) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
   if (app.isMounted) {
-    document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("input", (event) => {
+    document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("input", (event) => {
       if (typeof boundVar.value === "string") {
         boundVar.value = /**@type {HTMLInputElement}*/ (event.target).value
       } else {
@@ -286,7 +382,7 @@ export function bindValue(boundVar) {
     })
   } else {
     app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener${localId}]`)?.addEventListener("input", (event) => {
+      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("input", (event) => {
         if (typeof boundVar.value === "string") {
           boundVar.value = /**@type {HTMLInputElement}*/ (event.target).value
         } else {
@@ -295,7 +391,7 @@ export function bindValue(boundVar) {
       })
     })
   }
-  return `data-pico-listener${localId}`
+  return `data-pico-listener="${localId}"`
 }
 
 /**
@@ -346,4 +442,28 @@ export function useFuture(fn, placeholderFn, fallbackFn) {
       }
     })
   return `<div id="pico-element" class="pico-generated-id${id}">${placeholderFn !== undefined ? placeholderFn() : ""}</div>`
+}
+/**
+ * @template T
+ * @param {Iterable<T>} iterable 
+ * @param {((item: T)=>boolean) | undefined} pickerFn 
+ * @returns {string}
+ */
+export function useEach(iterable, pickerFn = () => true) {
+  let finalString = ""
+  if (iterable["hasRenderString"] === true) {
+    for (const item of iterable) {
+      console.log(item)
+      if (pickerFn(item)) {
+        finalString += iterable.getRenderString
+      }
+    }
+  } else {
+    for (const item of iterable) {
+      if (pickerFn(item)) {
+        finalString += item
+      }
+    }
+  }
+  return finalString
 }
