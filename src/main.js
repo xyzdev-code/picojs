@@ -1,4 +1,4 @@
-import {app, html, state, bindClick, useEach, effect} from "./pico.js"
+import { app, html, state, bindClick, useEach, effect } from "./pico.js"
 // async function App(){
 //   // const values = state.from([0,1,2,3])
 //   // values.push(4)
@@ -22,11 +22,27 @@ import {app, html, state, bindClick, useEach, effect} from "./pico.js"
 //     `
 // }
 // await app.fromAsync(App) 
-const a = state.from([1,2,3])
-const b = state.from([2,3,4])
+// const a = state.from([1, 2, 3])
+// const b = state.from([2, 3, 4])
+// const c = state.from([0])
+// effect(() => {
+//   a.push(b[2])
+//   console.log(a)
+//   a.push(c[0])
+// })
+// b[2] = 3
+// c[0] = 1
+const a = new state(1)
+const b = new state(10)
+const c = new state(11)
 effect(()=>{
-  a.push(a.length)
+  a.value += b.value
+  console.log(a.value)
+  a.value += c.value
 })
-console.log(a)
-b[2] = 3
+b.value = 10
+c.value = 11
+// effect(()=>{
+//   a.push(a.length)
+// })
 console.log(a)

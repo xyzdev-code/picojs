@@ -15,6 +15,10 @@ export class state {
     * @package
     */
   static callingEffects = false
+  /** 
+    * @type {Set<()=>unknown>}
+    */
+  static runningEffects = new Set()
   /**
    * @template U
    * @param {Array<U>} arr 
@@ -22,15 +26,14 @@ export class state {
    */
   static from(arr) {
     /**
-     * @type {Array<()=>unknown>}
+     * @type {Set<()=>unknown>}
      */
-    const dependencies = []
+    const dependencies = new Set()
     /**
      * @type {ProxyHandler<Array<U>>}
      */
     const handler = {
       get(target, prop, receiver) {
-        console.log(target, prop)
         const value = Reflect.get(target, prop, receiver)
         if (typeof value === "function" && typeof prop === "string") {
           if (PICO_ARRAY_MUTATORS.has(prop)) {
@@ -39,39 +42,43 @@ export class state {
               */
             return function(...args) {
               state.callingEffects = true
-              try {
-                const result = value.apply(target, args)
-                for (const dependency of dependencies) {
-                  dependency()
-                }
-                return result
-              } finally {
-                state.callingEffects = false
+              const result = value.apply(target, args)
+              for (const dependency of dependencies) {
+                if (state.runningEffects.has(dependency)) continue
+                try { dependency() } catch (err) { }
               }
+              state.callingEffects = false
+              return result
             }
           }
           return value.bind(receiver)
         }
-        console.log(target)
         if (state.currentFn !== undefined && state.callingEffects === false) {
-          dependencies.push(state.currentFn)
+          dependencies.add(state.currentFn)
         }
         return value
       },
       set(target, prop, value, receiver) {
+        const mutated = target[prop] !== value
         const result = Reflect.set(target, prop, value, receiver)
-        state.callingEffects = true
-        for (const dependency of dependencies) {
-          dependency()
+        if (mutated) {
+          state.callingEffects = true
+          for (const dependency of dependencies) {
+            if (state.runningEffects.has(dependency)) continue
+            try { dependency() } catch (err) { }
+          }
+          state.callingEffects = false
         }
-        state.callingEffects = false
         return result
       },
       deleteProperty(target, prop) {
         const result = Reflect.deleteProperty(target, prop)
         state.callingEffects = true
         for (const dependency of dependencies) {
-          dependency()
+          if (state.runningEffects.has(dependency)) continue
+          try {
+            dependency()
+          } catch (err) { }
         }
         state.callingEffects = false
         return result
@@ -90,9 +97,9 @@ export class state {
     this._value = value
     /**
      * @private
-     * @type{Array<()=>unknown>}
+     * @type{Set<()=>unknown>}
      */
-    this.dependencies = []
+    this.dependencies = new Set()
     /**
      * @private
      */
@@ -116,7 +123,7 @@ export class state {
     */
   get value() {
     if (state.currentFn !== undefined && state.callingEffects === false) {
-      this.dependencies.push(state.currentFn)
+      this.dependencies.add(state.currentFn)
     }
     return this._value
   }
@@ -124,9 +131,9 @@ export class state {
     * @param {T} newValue 
     */
   set value(newValue) {
-    this._value = newValue
-    state.callingEffects = true
-    try {
+    if (newValue !== this._value) {
+      this._value = newValue
+      state.callingEffects = true
       if (app.isMounted) {
         for (const el of document.querySelectorAll(`.pico-state-id${this.id}`)) {
           el.textContent = /**@type {string | null}*/ (this._value)
@@ -139,9 +146,11 @@ export class state {
         })
       }
       for (const dependency of this.dependencies) {
-        dependency()
+        if (state.runningEffects.has(dependency)) continue
+        try {
+          dependency()
+        } catch (err) { }
       }
-    } finally {
       state.callingEffects = false
     }
   }
@@ -154,13 +163,27 @@ export class state {
   }
 }
 /**
- * @param {()=>unknown} fn 
+ * @param {()=>(()=>unknown | undefined)} fn 
+ * 
  */
 export function effect(fn) {
+  /**
+   * @type {(()=>unknown) | undefined}
+   */
+  let cleanupFn
+  let disposed = false
+  function cleanup() {
+    if (typeof cleanupFn === "function") {
+      cleanupFn()
+      cleanupFn = undefined
+    }
+  }
   function internalEffect() {
+    state.runningEffects.add(internalEffect)
     state.currentFn = internalEffect
     fn()
     state.currentFn = undefined
+    state.runningEffects.delete(internalEffect)
   }
   internalEffect()
 }
@@ -443,27 +466,4 @@ export function useFuture(fn, placeholderFn, fallbackFn) {
     })
   return `<div id="pico-element" class="pico-generated-id${id}">${placeholderFn !== undefined ? placeholderFn() : ""}</div>`
 }
-/**
- * @template T
- * @param {Iterable<T>} iterable 
- * @param {((item: T)=>boolean) | undefined} pickerFn 
- * @returns {string}
- */
-export function useEach(iterable, pickerFn = () => true) {
-  let finalString = ""
-  if (iterable["hasRenderString"] === true) {
-    for (const item of iterable) {
-      console.log(item)
-      if (pickerFn(item)) {
-        finalString += iterable.getRenderString
-      }
-    }
-  } else {
-    for (const item of iterable) {
-      if (pickerFn(item)) {
-        finalString += item
-      }
-    }
-  }
-  return finalString
-}
+
