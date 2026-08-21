@@ -1,3 +1,10 @@
+/**
+ * @template T
+ * @typedef {{
+   * __unsafe_raw_value: Array<T>
+   * [key: `getItemRenderString${number}`]: string
+   * } & Array<T>} ArrayProxy
+ */
 const PICO_ARRAY_MUTATORS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin'])
 /**
  * @template T
@@ -11,29 +18,35 @@ export class state {
     * @type{(()=>unknown) | undefined}
     */
   static currentFn = undefined
-  /**
-    * @package
-    */
-  static callingEffects = false
+
   /** 
     * @type {Set<()=>unknown>}
     */
   static runningEffects = new Set()
+  /** 
+    * @type {(Array<()=>unknown>) | undefined}
+    */
+  static currentCleanups = undefined
   /**
    * @template U
    * @param {Array<U>} arr 
-   * @returns {Array<U>}
+   * @returns {ArrayProxy<U>}
    */
   static from(arr) {
     /**
      * @type {Set<()=>unknown>}
      */
     const dependencies = new Set()
+    const id = state.id
+    state.id++
     /**
      * @type {ProxyHandler<Array<U>>}
      */
     const handler = {
       get(target, prop, receiver) {
+        if (prop === '__unsafe_raw_value') {
+          return target
+        }
         const value = Reflect.get(target, prop, receiver)
         if (typeof value === "function" && typeof prop === "string") {
           if (PICO_ARRAY_MUTATORS.has(prop)) {
@@ -41,51 +54,56 @@ export class state {
               * @param {Parameters<typeof value>} args
               */
             return function(...args) {
-              state.callingEffects = true
               const result = value.apply(target, args)
-              for (const dependency of dependencies) {
+              for (const dependency of [...dependencies]) {
                 if (state.runningEffects.has(dependency)) continue
                 try { dependency() } catch (err) { }
               }
-              state.callingEffects = false
               return result
             }
           }
           return value.bind(receiver)
+        } else if (typeof prop === "string" && prop.startsWith("getItemRenderString")) {
+          const index = parseInt(prop.substring(19))
+          return html`<span id="pico-element" class="pico-state-id${id}-idx${index}"></span>`
         }
-        if (state.currentFn !== undefined && state.callingEffects === false) {
+        if (state.currentFn !== undefined) {
+          const fn = state.currentFn
           dependencies.add(state.currentFn)
+          if (state.currentCleanups) {
+            state.currentCleanups.push(() => dependencies.delete(fn))
+          }
         }
         return value
       },
       set(target, prop, value, receiver) {
-        const mutated = target[prop] !== value
+        if (prop === '__unsafe_raw_value') {
+          target.splice(0, target.length, ...value)
+          return true
+        }
+        const mutated = target[/**@type {any}*/(prop)] !== value
         const result = Reflect.set(target, prop, value, receiver)
         if (mutated) {
-          state.callingEffects = true
-          for (const dependency of dependencies) {
+          for (const dependency of [...dependencies]) {
             if (state.runningEffects.has(dependency)) continue
             try { dependency() } catch (err) { }
           }
-          state.callingEffects = false
         }
         return result
       },
       deleteProperty(target, prop) {
         const result = Reflect.deleteProperty(target, prop)
-        state.callingEffects = true
-        for (const dependency of dependencies) {
+        for (const dependency of [...dependencies]) {
           if (state.runningEffects.has(dependency)) continue
           try {
             dependency()
           } catch (err) { }
         }
-        state.callingEffects = false
         return result
       }
     }
 
-    return new Proxy(arr, handler)
+    return /**@type {ArrayProxy<U>}*/ (new Proxy(arr, handler))
   }
   /**
    * @param {T} value 
@@ -122,8 +140,12 @@ export class state {
     * @returns{T}
     */
   get value() {
-    if (state.currentFn !== undefined && state.callingEffects === false) {
-      this.dependencies.add(state.currentFn)
+    if (state.currentFn !== undefined) {
+      const fn = state.currentFn
+      this.dependencies.add(fn)
+      if (state.currentCleanups) {
+        state.currentCleanups.push(() => this.dependencies.delete(fn))
+      }
     }
     return this._value
   }
@@ -133,7 +155,6 @@ export class state {
   set value(newValue) {
     if (newValue !== this._value) {
       this._value = newValue
-      state.callingEffects = true
       if (app.isMounted) {
         for (const el of document.querySelectorAll(`.pico-state-id${this.id}`)) {
           el.textContent = /**@type {string | null}*/ (this._value)
@@ -145,13 +166,12 @@ export class state {
           }
         })
       }
-      for (const dependency of this.dependencies) {
+      for (const dependency of [...this.dependencies]) {
         if (state.runningEffects.has(dependency)) continue
         try {
           dependency()
         } catch (err) { }
       }
-      state.callingEffects = false
     }
   }
   /**
@@ -162,8 +182,9 @@ export class state {
     return `<span id="pico-element" class="pico-state-id${this.id}">${this._value}</span>`
   }
 }
+
 /**
- * @param {()=>(()=>unknown | undefined)} fn 
+ * @param {()=>((()=>unknown) | void)} fn 
  * 
  */
 export function effect(fn) {
@@ -172,35 +193,53 @@ export function effect(fn) {
    */
   let cleanupFn
   let disposed = false
+  /**
+   * @type {Array<()=>unknown>}
+   */
+  let unsubscribes = []
   function cleanup() {
     if (typeof cleanupFn === "function") {
       cleanupFn()
       cleanupFn = undefined
     }
+    for (const unsubscribe of unsubscribes) {
+      unsubscribe()
+    }
+    unsubscribes = []
   }
   function internalEffect() {
+    if (disposed) { return }
+    cleanup()
     state.runningEffects.add(internalEffect)
     state.currentFn = internalEffect
-    fn()
+    const prevCleanups = state.currentCleanups
+    state.currentCleanups = unsubscribes
+    const res = fn()
+    if (typeof res === "function") {
+      cleanupFn = res
+    }
+    state.currentCleanups = prevCleanups
     state.currentFn = undefined
     state.runningEffects.delete(internalEffect)
   }
   internalEffect()
+  return () => {
+    disposed = true
+    cleanup()
+  }
 }
 /**
   * @template T
   * @param {()=>T} fn 
-  * @returns {state<T>}
+  * @returns {[state<T>, ()=>unknown]}
   */
 export function computed(fn) {
   const internal_value = /** @type {state<T>} */ (new state(undefined))
-  function internal_effect() {
-    state.currentFn = internal_effect
+  const dispose = effect(() => {
     internal_value.value = fn()
-    state.currentFn = undefined
-  }
-  internal_effect()
-  return internal_value
+    return undefined
+  })
+  return [internal_value, dispose]
 }
 /**
  * @param {TemplateStringsArray} strings 
@@ -418,13 +457,14 @@ export function bindValue(boundVar) {
 }
 
 /**
- * @param {()=>(unknown | Error)} fn 
- * @param {(err: unknown)=>unknown} fallbackFn
- * @returns {unknown}
+ * @template T, U
+ * @param {()=>T} fn 
+ * @param {(err: unknown)=>U} fallbackFn
+ * @returns {T|U}
  */
 export function useTry(fn, fallbackFn) {
   try {
-    return /**@type {unknown}*/ (fn())
+    return (fn())
   } catch (err) {
     return fallbackFn(err)
   }
