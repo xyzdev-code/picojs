@@ -3,17 +3,13 @@ function App(){
   const number = new state("0")
   const fruits = state.from(["strawberry", "banana"])
   function pushFruit(){
-    alert("pushed")
     fruits.push("apple", "watermelon")
   }
-  effect(()=>{
-    alert(`You clicked ${fruits[1]}`)
-  })
   return html`
   <p>The count is ${number}</p>
     <textarea name="" id="" ${bindValue(number)}>Type here</textarea>  
     <ol>
-    ${useEach(fruits)}
+    ${useEach(fruits, (x)=>x.slice(1,3))}
     </ol>
     <button ${bindClick(pushFruit)}>Click</button>
   `

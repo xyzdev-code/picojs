@@ -100,14 +100,13 @@ export class state {
         }
         if (prop === "fn") {
           fn = value
+          return true
         }
         if (typeof prop === "string" && parseInt(prop).toString() === prop) {
           const index = parseInt(prop, 10)
           const content = fn ? fn(value) : value
-
           onMount(() => {
             const existing = document.querySelector(`.pico-state-id${id}-idx${index}`)
-
             if (existing) {
               existing.innerHTML = content
             } else {
@@ -148,7 +147,7 @@ export class state {
         return result
       },
       has(target, prop) {
-        if (prop === "getRenderString") {
+        if (prop === "getRenderString" || prop === "__unsafe_raw_value" || prop === "fn") {
           return true
         }
         return prop in target
@@ -536,6 +535,7 @@ function isArrayProxy(arr) {
 export function useEach(arr, fn = (x) => /**@type {string}*/(x)) {
   let finalStr = ""
   if (isArrayProxy(arr)) {
+    arr["fn"] = fn
     for (let i = 0; i < arr.length; i++) {
       finalStr += arr[`getItemRenderString${i}`] + fn(/**@type {T}*/(arr[i])) + "</li>"
     }
