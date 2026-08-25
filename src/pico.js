@@ -3,6 +3,7 @@
  * @typedef {{
    * __unsafe_raw_value: Array<T>
    * [key: `getItemRenderString${number}`]: string
+   * fn: (x: T) => string
    * } & Array<T>} ArrayProxy
  */
 const PICO_ARRAY_MUTATORS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin'])
@@ -48,13 +49,17 @@ export class state {
      */
     const dependencies = new Set()
     const id = state.id
+    let isMutating = false
+    /**
+     * @type {((x: U)=>string) | undefined}
+     */
+    let fn = undefined
     state.id++
     /**
      * @type {ProxyHandler<Array<U>>}
      */
     const handler = {
       get(target, prop, receiver) {
-
         const value = Reflect.get(target, prop, receiver)
         if (typeof value === "function" && typeof prop === "string") {
           if (PICO_ARRAY_MUTATORS.has(prop)) {
@@ -62,7 +67,9 @@ export class state {
               * @param {Parameters<typeof value>} args
               */
             return function(...args) {
-              const result = value.apply(target, args)
+              isMutating = true
+              const result = value.apply(receiver, args)
+              isMutating = false
               for (const dependency of [...dependencies]) {
                 if (state.runningEffects.has(dependency)) continue
                 try { dependency() } catch (err) { }
@@ -87,26 +94,36 @@ export class state {
         return value
       },
       set(target, prop, value, receiver) {
-        if (prop === '__unsafe_raw_value') {
+        if (prop === "__unsafe_raw_value") {
           target.splice(0, target.length, ...value)
           return true
         }
+        if (prop === "fn") {
+          fn = value
+        }
         if (typeof prop === "string" && parseInt(prop).toString() === prop) {
-          if (app.isMounted) {
-            for (const item of document.querySelectorAll(`[class=pico-state-id${id}-idx${prop}]`)) {
-              item.innerHTML = value
-            }
-          } else {
-            app.onMountCallbacks.push(() => {
-              for (const item of document.querySelectorAll(`[class=pico-state-id${id}-idx${prop}]`)) {
-                item.innerHTML = value
+          const index = parseInt(prop, 10)
+          const content = fn ? fn(value) : value
+
+          onMount(() => {
+            const existing = document.querySelector(`.pico-state-id${id}-idx${index}`)
+
+            if (existing) {
+              existing.innerHTML = content
+            } else {
+              const prevElement = document.querySelector(`.pico-state-id${id}-idx${index - 1}`)
+              const newHtml = `<li id="pico-array-element" class="pico-state-id${id}-idx${index}">${content}</li>`
+              if (prevElement) {
+                prevElement.insertAdjacentHTML("afterend", newHtml)
+              } else {
+                document.querySelector(`.pico-state-id${id}-list`)?.insertAdjacentHTML("afterbegin", newHtml)
               }
-            })
-          }
+            }
+          })
         }
         const mutated = target[/**@type {any}*/(prop)] !== value
         const result = Reflect.set(target, prop, value, receiver)
-        if (mutated) {
+        if (mutated && !isMutating) {
           for (const dependency of [...dependencies]) {
             if (state.runningEffects.has(dependency)) continue
             try { dependency() } catch (err) { }
@@ -115,6 +132,12 @@ export class state {
         return result
       },
       deleteProperty(target, prop) {
+        if (typeof prop === "string" && parseInt(prop, 10).toString() === prop) {
+          onMount(() => {
+            const el = document.querySelector(`.pico-state-id${id}-idx${prop}`)
+            if (el) el.remove()
+          })
+        }
         const result = Reflect.deleteProperty(target, prop)
         for (const dependency of [...dependencies]) {
           if (state.runningEffects.has(dependency)) continue
@@ -188,17 +211,11 @@ export class state {
   set value(newValue) {
     if (newValue !== this._value) {
       this._value = newValue
-      if (app.isMounted) {
+      onMount(() => {
         for (const el of document.querySelectorAll(`.pico-state-id${this.id}`)) {
           el.textContent = /**@type {string | null}*/ (this._value)
         }
-      } else {
-        app.onMountCallbacks.push(() => {
-          for (const el of document.querySelectorAll(`.pico-state-id${this.id}`)) {
-            el.textContent = /**@type {string | null}*/ (this._value)
-          }
-        })
-      }
+      })
       for (const dependency of [...this.dependencies]) {
         if (state.runningEffects.has(dependency)) continue
         try {
@@ -351,13 +368,9 @@ export function onMount(cb) {
 export function bindClick(cb) {
   const local_id = app.eventListenerId
   app.eventListenerId += 1
-  if (app.isMounted) {
+  onMount(() => {
     document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("click", cb)
-  } else {
-    app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("click", cb)
-    })
-  }
+  })
   return `data-pico-listener="${local_id}"`
 }
 /**
@@ -367,13 +380,9 @@ export function bindClick(cb) {
 export function bindMouseover(cb) {
   const local_id = app.eventListenerId
   app.eventListenerId += 1
-  if (app.isMounted) {
+  onMount(() => {
     document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("mouseover", cb)
-  } else {
-    app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("mouseover", cb)
-    })
-  }
+  })
   return `data-pico-listener="${local_id}"`
 }
 
@@ -384,13 +393,10 @@ export function bindMouseover(cb) {
 export function bindMouseenter(cb) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
-  if (app.isMounted) {
+  onMount(() => {
     document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mouseenter", cb)
-  } else {
-    app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mouseenter", cb)
-    })
-  }
+  })
+
   return `data-pico-listener="${localId}"`
 }
 
@@ -401,13 +407,9 @@ export function bindMouseenter(cb) {
 export function bindMousedown(cb) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
-  if (app.isMounted) {
+  onMount(() => {
     document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mousedown", cb)
-  } else {
-    app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mousedown", cb)
-    })
-  }
+  })
   return `data-pico-listener="${localId}"`
 }
 
@@ -418,13 +420,9 @@ export function bindMousedown(cb) {
 export function bindMouseup(cb) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
-  if (app.isMounted) {
+  onMount(() => {
     document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mouseup", cb)
-  } else {
-    app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mouseup", cb)
-    })
-  }
+  })
   return `data-pico-listener="${localId}"`
 }
 
@@ -435,13 +433,9 @@ export function bindMouseup(cb) {
 export function bindDblclick(cb) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
-  if (app.isMounted) {
+  onMount(() => {
     document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("dblclick", cb)
-  } else {
-    app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("dblclick", cb)
-    })
-  }
+  })
   return `data-pico-listener="${localId}"`
 }
 /**
@@ -451,21 +445,13 @@ export function bindDblclick(cb) {
 export function bindChecked(cb) {
   const local_id = app.eventListenerId
   app.eventListenerId += 1
-  if (app.isMounted) {
+  onMount(() => {
     document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("change", (event) => {
       if (/**@type {HTMLInputElement}*/(event.target).checked) {
         cb(/**@type {HTMLInputElement}*/(event.target).checked)
       }
     })
-  } else {
-    app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("change", (event) => {
-        if (/**@type {HTMLInputElement}*/(event.target).checked) {
-          cb(/**@type {HTMLInputElement}*/(event.target).checked)
-        }
-      })
-    })
-  }
+  })
   return `data-pico-listener="${local_id}"`
 }
 /**
@@ -475,7 +461,7 @@ export function bindChecked(cb) {
 export function bindValue(boundVar) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
-  if (app.isMounted) {
+  onMount(() => {
     document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("input", (event) => {
       if (typeof boundVar.value === "string") {
         boundVar.value = /**@type {HTMLInputElement}*/ (event.target).value
@@ -483,17 +469,7 @@ export function bindValue(boundVar) {
         boundVar.value = parseFloat(/**@type {HTMLInputElement}*/(event.target).value)
       }
     })
-  } else {
-    app.onMountCallbacks.push(() => {
-      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("input", (event) => {
-        if (typeof boundVar.value === "string") {
-          boundVar.value = /**@type {HTMLInputElement}*/ (event.target).value
-        } else {
-          boundVar.value = parseFloat(/**@type {HTMLInputElement}*/(event.target).value)
-        }
-      })
-    })
-  }
+  })
   return `data-pico-listener="${localId}"`
 }
 
@@ -528,30 +504,18 @@ export function useFuture(fn, fallbackFn = () => "", placeholderFn = () => "") {
   const id = app.generatedComponentId
   fn()
     .then((value) => {
-      if (app.isMounted) {
+      onMount(() => {
         for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
           el.innerHTML = value
         }
-      } else {
-        app.onMountCallbacks.push(() => {
-          for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
-            el.innerHTML = value
-          }
-        })
-      }
+      })
     })
     .catch((err) => {
-      if (app.isMounted) {
+      onMount(() => {
         for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
           el.innerHTML = fallbackFn(err)
         }
-      } else {
-        app.onMountCallbacks.push(() => {
-          for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
-            el.innerHTML = fallbackFn(err)
-          }
-        })
-      }
+      })
     })
   return `<div id="pico-element" class="pico-generated-id${id}">${placeholderFn !== undefined ? placeholderFn() : ""}</div>`
 }
@@ -579,6 +543,7 @@ export function useEach(arr, fn = (x) => /**@type {string}*/(x)) {
     for (const item of arr) {
       const res = fn(item)
       if (/**@type {unknown}*/(res) instanceof state) {
+        // @ts-expect-error
         finalStr += `<li>${/**@type {state<unknown>}*/(res).value}</li>`
       }
       finalStr += `<li>${res}</li>`
