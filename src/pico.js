@@ -4,8 +4,10 @@
    * __unsafe_raw_value: Array<T>
    * [key: `getItemRenderString${number}`]: string
    * fn: (x: T) => string
+   * id: number
    * } & Array<T>} ArrayProxy
  */
+
 const PICO_ARRAY_MUTATORS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin'])
 /**
  * Defines a reactive object that is tracked by effect, computed etc and automatically updated by pico in the html.
@@ -83,6 +85,8 @@ export class state {
           return `<li id="pico-array-element" class="pico-state-id${id}-idx${index}">`
         } else if (prop === '__unsafe_raw_value') {
           return target
+        } else if (prop === "id") {
+          return id
         }
         if (state.currentFn !== undefined) {
           const fn = state.currentFn
@@ -103,7 +107,7 @@ export class state {
           return true
         }
         if (typeof prop === "string" && parseInt(prop).toString() === prop) {
-          const index = parseInt(prop, 10)
+          const index = parseInt(prop)
           const content = fn ? fn(value) : value
           onMount(() => {
             const existing = document.querySelector(`.pico-state-id${id}-idx${index}`)
@@ -120,6 +124,7 @@ export class state {
             }
           })
         }
+
         const mutated = target[/**@type {any}*/(prop)] !== value
         const result = Reflect.set(target, prop, value, receiver)
         if (mutated && !isMutating) {
@@ -131,7 +136,7 @@ export class state {
         return result
       },
       deleteProperty(target, prop) {
-        if (typeof prop === "string" && parseInt(prop, 10).toString() === prop) {
+        if (typeof prop === "string" && parseInt(prop).toString() === prop) {
           onMount(() => {
             const el = document.querySelector(`.pico-state-id${id}-idx${prop}`)
             if (el) el.remove()
@@ -147,7 +152,7 @@ export class state {
         return result
       },
       has(target, prop) {
-        if (prop === "getRenderString" || prop === "__unsafe_raw_value" || prop === "fn") {
+        if (prop === "getRenderString" || prop === "__unsafe_raw_value" || prop === "fn" || prop === "id") {
           return true
         }
         return prop in target
@@ -231,7 +236,7 @@ export class state {
     return `<span id="pico-element" class="pico-state-id${this.id}">${this._value}</span>`
   }
 }
-
+export class RenderErrror extends Error { }
 /**
  * Pass in a function which will be reran when its dependencies mutates
  * @example
@@ -319,46 +324,51 @@ export class app {
   /** 
     * @type {Array<()=>unknown>}
     */
-  static onMountCallbacks = []
+  static renderCallbacks = []
   static eventListenerId = 0
   static isMounted = false
   static generatedComponentId = 0
   static listId = 0
   /**
-   * @param {()=>Promise<string>} async_app_component 
+   * @param {()=>Promise<string>} asyncAppComponent 
+   * @param {string} root 
    * @returns {Promise<app>}
    */
-  static async fromAsync(async_app_component) {
-    const res = await async_app_component()
-    return new app(() => res)
+  static async initAsync(asyncAppComponent, root = "body") {
+    const res = await asyncAppComponent()
+    return new app(() => res, root)
   }
   /**
-   * @param {()=>string} app_component 
+   * @param {()=>string} appComponent 
+   * @param {string} root 
    * @returns {app}
    */
-  static from(app_component) {
-    return new app(app_component)
+  static init(appComponent, root = "body") {
+    return new app(appComponent, root)
   }
   /**
+   * @private
    * @param {()=>string} app_component 
+   * @param {string} root 
    */
-  constructor(app_component) {
-    document.body.innerHTML = app_component()
-    for (const cb of app.onMountCallbacks) {
+  constructor(app_component, root) {
+    const el = document.querySelector(root)
+    if (el === null) {
+      throw new RenderErrror(`Failed to get an html element with property ${root}`)
+    }
+    el.innerHTML = app_component()
+    app.isMounted = true
+    for (const cb of app.renderCallbacks) {
       cb()
     }
-    app.isMounted = true
+    app.renderCallbacks = []
   }
 }
 /**
  * @param {()=>unknown} cb 
  */
 export function onMount(cb) {
-  if (!app.isMounted) {
-    app.onMountCallbacks.push(cb)
-  } else {
-    cb()
-  }
+  app.renderCallbacks.push(cb)
 }
 /**
  * @param {()=>unknown} cb 
@@ -501,20 +511,25 @@ export function useTry(fn, fallbackFn = () => /**@type {U}*/("")) {
  */
 export function useFuture(fn, fallbackFn = () => "", placeholderFn = () => "") {
   const id = app.generatedComponentId
+  app.generatedComponentId++
   fn()
     .then((value) => {
-      onMount(() => {
-        for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
-          el.innerHTML = value
-        }
-      })
+      for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
+        el.innerHTML = value
+      }
+      for (const cb of app.renderCallbacks) {
+        cb()
+      }
+      app.renderCallbacks = []
     })
     .catch((err) => {
-      onMount(() => {
-        for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
-          el.innerHTML = fallbackFn(err)
-        }
-      })
+      for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
+        el.innerHTML = fallbackFn(err)
+      }
+      for (const cb of app.renderCallbacks) {
+        cb()
+      }
+      app.renderCallbacks = []
     })
   return `<div id="pico-element" class="pico-generated-id${id}">${placeholderFn !== undefined ? placeholderFn() : ""}</div>`
 }
@@ -535,17 +550,17 @@ function isArrayProxy(arr) {
 export function useEach(arr, fn = (x) => /**@type {string}*/(x)) {
   let finalStr = ""
   if (isArrayProxy(arr)) {
+    if (arr.length === 0) {
+      return `<li class="pico-state-id${arr["id"]}-idx-1 id="pico-array-element" style="display: none"></li>`
+    }
     arr["fn"] = fn
     for (let i = 0; i < arr.length; i++) {
-      finalStr += arr[`getItemRenderString${i}`] + fn(/**@type {T}*/(arr[i])) + "</li>"
+      const res = fn(/**@type {T}*/(arr[i]))
+      finalStr += arr[`getItemRenderString${i}`] + res + "</li>"
     }
   } else {
     for (const item of arr) {
       const res = fn(item)
-      if (/**@type {unknown}*/(res) instanceof state) {
-        // @ts-expect-error
-        finalStr += `<li>${/**@type {state<unknown>}*/(res).value}</li>`
-      }
       finalStr += `<li>${res}</li>`
     }
   }

@@ -1,26 +1,29 @@
-import {app, bindClick, bindValue, effect, html, state, useEach} from "./pico.js"
-function App(){
-  const number = new state("0")
-  const fruits = state.from(["strawberry", "banana"])
-  function pushFruit(){
-    fruits.push("apple", "watermelon")
-  }
+import {app, bindClick, bindValue, effect, html, onMount, state, useEach, useFuture} from "./pico.js"
+/**
+ * @param {number} ms 
+ */
+const delay = ms => new Promise(res => setTimeout(res, ms));
+async function WidgetA() {
+  await delay(2000)
+  onMount(() => {
+    document.querySelector("#btn-a").addEventListener("click", () => console.log("A clicked"))
+  })
+  return html`<button id="btn-a">Button A</button>`
+}
+
+async function WidgetB() {
+  await delay(2000) // Exact same delay
+  onMount(() => {
+    document.querySelector("#btn-b").addEventListener("click", () => console.log("B clicked"))
+  })
+  return html`<button id="btn-b">Button B</button>`
+}
+
+function App() {
   return html`
-  <p>The count is ${number}</p>
-    <textarea name="" id="" ${bindValue(number)}>Type here</textarea>  
-    <ol>
-    ${useEach(fruits, (x)=>x.slice(1,3))}
-    </ol>
-    <button ${bindClick(pushFruit)}>Click</button>
+    ${useFuture(WidgetA)}
+    ${useFuture(WidgetB)}
   `
 }
-new app(App)
-// const a = state.from([1,2,3])
-// const b = state.from([1,2])
-// effect(()=>{
-//   a.push(b[1])
-//   console.log(a)
-//   a.push(a.length)
-// })
-// b[1] = 3
-// console.log(a)
+app.init(App)
+
