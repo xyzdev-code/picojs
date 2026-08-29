@@ -1,5 +1,5 @@
 {
-  "name": "picojs",
+  "name": "@xyzdev-code/picojs",
   "version": "0.0.1",
   "description": "A minimal Javascript framework.",
   "homepage": "https://github.com/xyzdev-code/picojs#readme",
@@ -13,7 +13,10 @@
   "license": "LGPL-2.1-or-later",
   "author": "Xiao Yaozi",
   "type": "module",
-  "main": "src/picojs",
+  "main": "src/pico.js",
+  "exports": {
+    ".": "src/pico.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
