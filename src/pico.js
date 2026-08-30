@@ -100,7 +100,7 @@ export class state {
       },
       set(target, prop, value, receiver) {
         if (prop === "__unsafe_raw_value") {
-          target.splice(0, target.length, ...value)
+          receiver.splice(0, target.length, ...value)
           return true
         }
         if (prop === "fn") {
