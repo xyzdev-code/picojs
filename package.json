@@ -16,8 +16,8 @@
   "types": "dist/src/pico.d.ts",
   "exports": {
     ".": {
-      "import": "src/pico.js",
-      "types": "dist/src/pico.d.ts"
+      "types": "dist/src/pico.d.ts",
+      "import": "src/pico.js"
     }
   },
   "scripts": {
