@@ -14,6 +14,7 @@
   "author": "Xiao Yaozi",
   "type": "module",
   "main": "src/pico.js",
+  "types": "dist/src/pico.d.ts",
   "exports": {
     ".": {
       "import": "src/pico.js",
