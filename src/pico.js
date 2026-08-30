@@ -24,6 +24,7 @@ const PICO_ARRAY_MUTATORS = new Set(['push', 'pop', 'shift', 'unshift', 'splice'
 export class state {
   /** 
     * @private
+    * @type {number}
     */
   static id = 0
   /**
@@ -167,6 +168,7 @@ export class state {
   constructor(value) {
     /**
      * @private
+     * @type {T}
      */
     this._value = value
     /**
@@ -176,6 +178,7 @@ export class state {
     this.dependencies = new Set()
     /**
      * @private
+     * @type {number}
      */
     this.id = state.id
     state.id++

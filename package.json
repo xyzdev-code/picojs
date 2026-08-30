@@ -15,7 +15,10 @@
   "type": "module",
   "main": "src/pico.js",
   "exports": {
-    ".": "src/pico.js"
+    ".": {
+      "import": "src/pico.js",
+      "types": "dist/src/pico.d.ts"
+    }
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
