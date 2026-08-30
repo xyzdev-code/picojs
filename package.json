@@ -13,7 +13,6 @@
   "license": "LGPL-2.1-or-later",
   "author": "Xiao Yaozi",
   "type": "module",
-  "main": "src/pico.js",
   "types": "dist/src/pico.d.ts",
   "exports": {
     ".": {
