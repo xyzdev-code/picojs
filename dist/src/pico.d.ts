@@ -127,10 +127,15 @@ export declare class app {
       * @type {Array<()=>unknown>}
       */
     static renderCallbacks: Array<() => unknown>;
+    /**
+      * @type {Array<()=>unknown>}
+      */
+    static immediateRenders: Array<() => unknown>;
     static eventListenerId: number;
     static isMounted: boolean;
     static generatedComponentId: number;
     static listId: number;
+    static isCurrNested: boolean;
     /**
      * @param {()=>Promise<string>} asyncAppComponent
      * @param {string} root
@@ -154,6 +159,10 @@ export declare class app {
  * @param {()=>unknown} cb
  */
 export declare function onMount(cb: () => unknown): void;
+/**
+ * @param {()=>unknown} cb
+ */
+export declare function beforeMount(cb: () => unknown): void;
 /**
  * @param {()=>unknown} cb
  * @returns {string}
