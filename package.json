@@ -1,6 +1,6 @@
 {
   "name": "@xyzdev-code/picojs",
-  "version": "0.0.7",
+  "version": "0.1.0",
   "description": "A minimal Javascript framework.",
   "homepage": "https://github.com/xyzdev-code/picojs#readme",
   "bugs": {
