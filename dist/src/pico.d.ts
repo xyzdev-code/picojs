@@ -5,6 +5,7 @@
    * [key: `getItemRenderString${number}`]: string
    * fn: (x: T) => string
    * id: number
+   * tag: string
    * } & Array<T>} ArrayProxy
  */
 export type ArrayProxy<T> = {
@@ -12,6 +13,7 @@ export type ArrayProxy<T> = {
     [key: `getItemRenderString${number}`]: string;
     fn: (x: T) => string;
     id: number;
+    tag: string;
 } & Array<T>;
 /**
  * Defines a reactive object that is tracked by effect, computed etc and automatically updated by pico in the html.
@@ -164,35 +166,35 @@ export declare function onMount(cb: () => unknown): void;
  */
 export declare function beforeMount(cb: () => unknown): void;
 /**
- * @param {()=>unknown} cb
+ * @param {(e: Event)=>unknown} cb
  * @returns {string}
  */
-export declare function bindClick(cb: () => unknown): string;
+export declare function bindClick(cb: (e: Event) => unknown): string;
 /**
- * @param {()=>unknown} cb
+ * @param {(e: Event)=>unknown} cb
  * @returns {string}
  */
-export declare function bindMouseover(cb: () => unknown): string;
+export declare function bindMouseover(cb: (e: Event) => unknown): string;
 /**
- * @param {()=>unknown} cb
+ * @param {(e: Event)=>unknown} cb
  * @returns {string}
  */
-export declare function bindMouseenter(cb: () => unknown): string;
+export declare function bindMouseenter(cb: (e: Event) => unknown): string;
 /**
- * @param {()=>unknown} cb
+ * @param {(e: Event)=>unknown} cb
  * @returns {string}
  */
-export declare function bindMousedown(cb: () => unknown): string;
+export declare function bindMousedown(cb: (e: Event) => unknown): string;
 /**
- * @param {()=>unknown} cb
+ * @param {(e: Event)=>unknown} cb
  * @returns {string}
  */
-export declare function bindMouseup(cb: () => unknown): string;
+export declare function bindMouseup(cb: (e: Event) => unknown): string;
 /**
- * @param {()=>unknown} cb
+ * @param {(e: Event)=>unknown} cb
  * @returns {string}
  */
-export declare function bindDblclick(cb: () => unknown): string;
+export declare function bindDblclick(cb: (e: Event) => unknown): string;
 /**
  * @param {(is_checked: boolean)=>unknown} cb
  * @returns {string}
@@ -224,6 +226,7 @@ export declare function useFuture(fn: () => Promise<string>, fallbackFn?: ((err:
  * @template T
  * @param {Iterable<T>} arr
  * @param {((item: T)=>string) | undefined} fn
+ * @param {string | undefined} tag
  * @returns {string}
  */
-export declare function useEach<T>(arr: Iterable<T>, fn?: ((item: T) => string) | undefined): string;
+export declare function useEach<T>(arr: Iterable<T>, fn?: ((item: T) => string) | undefined, tag?: string | undefined): string;
