@@ -83,7 +83,7 @@ export class state {
           return value.bind(receiver)
         } else if (typeof prop === "string" && prop.startsWith("getItemRenderString")) {
           const index = parseInt(prop.substring(19))
-          return `<li id="pico-array-element" class="pico-state-id${id}-idx${index}">`
+          return `<div id="pico-array-element" class="pico-state-id${id}-idx${index}">`
         } else if (prop === '__unsafe_raw_value') {
           return target
         } else if (prop === "id") {
@@ -98,6 +98,7 @@ export class state {
         }
         return value
       },
+      // DOM updates possible
       set(target, prop, value, receiver) {
         if (prop === "__unsafe_raw_value") {
           receiver.splice(0, target.length, ...value)
@@ -108,15 +109,17 @@ export class state {
           return true
         }
         if (typeof prop === "string" && parseInt(prop).toString() === prop) {
+          const prevNested = app.isCurrNested
+          app.isCurrNested = true
           const index = parseInt(prop)
           const content = fn ? fn(value) : value
-          onMount(() => {
+          beforeMount(() => {
             const existing = document.querySelector(`.pico-state-id${id}-idx${index}`)
             if (existing) {
               existing.innerHTML = content
             } else {
               const prevElement = document.querySelector(`.pico-state-id${id}-idx${index - 1}`)
-              const newHtml = `<li id="pico-array-element" class="pico-state-id${id}-idx${index}">${content}</li>`
+              const newHtml = `<div id="pico-array-element" class="pico-state-id${id}-idx${index}">${content}</div>`
               if (prevElement) {
                 prevElement.insertAdjacentHTML("afterend", newHtml)
               } else {
@@ -124,8 +127,18 @@ export class state {
               }
             }
           })
+          if (!prevNested) {
+            for (const cb of app.immediateRenders) {
+              cb()
+            }
+            app.immediateRenders = []
+            for (const cb of app.renderCallbacks) {
+              cb()
+            }
+            app.renderCallbacks = []
+          }
+          app.isCurrNested = prevNested
         }
-
         const mutated = target[/**@type {any}*/(prop)] !== value
         const result = Reflect.set(target, prop, value, receiver)
         if (mutated && !isMutating) {
@@ -136,12 +149,26 @@ export class state {
         }
         return result
       },
+      // DOM updates possible
       deleteProperty(target, prop) {
         if (typeof prop === "string" && parseInt(prop).toString() === prop) {
-          onMount(() => {
+          const prevNested = app.isCurrNested
+          app.isCurrNested = true
+          beforeMount(() => {
             const el = document.querySelector(`.pico-state-id${id}-idx${prop}`)
             if (el) el.remove()
           })
+          if (!prevNested) {
+            for (const cb of app.immediateRenders) {
+              cb()
+            }
+            app.immediateRenders = []
+            for (const cb of app.renderCallbacks) {
+              cb()
+            }
+            app.renderCallbacks = []
+          }
+          app.isCurrNested = prevNested
         }
         const result = Reflect.deleteProperty(target, prop)
         for (const dependency of [...dependencies]) {
@@ -217,12 +244,25 @@ export class state {
     */
   set value(newValue) {
     if (newValue !== this._value) {
+      const prevNested = app.isCurrNested
+      app.isCurrNested = true
       this._value = newValue
       onMount(() => {
         for (const el of document.querySelectorAll(`.pico-state-id${this.id}`)) {
           el.textContent = /**@type {string | null}*/ (this._value)
         }
       })
+      if (!prevNested) {
+        for (const cb of app.immediateRenders) {
+          cb()
+        }
+        app.immediateRenders = []
+        for (const cb of app.renderCallbacks) {
+          cb()
+        }
+        app.renderCallbacks = []
+      }
+      app.isCurrNested = prevNested
       for (const dependency of [...this.dependencies]) {
         if (state.runningEffects.has(dependency)) continue
         try {
@@ -328,10 +368,15 @@ export class app {
     * @type {Array<()=>unknown>}
     */
   static renderCallbacks = []
+  /** 
+    * @type {Array<()=>unknown>}
+    */
+  static immediateRenders = []
   static eventListenerId = 0
   static isMounted = false
   static generatedComponentId = 0
   static listId = 0
+  static isCurrNested = false
   /**
    * @param {()=>Promise<string>} asyncAppComponent 
    * @param {string} root 
@@ -360,6 +405,10 @@ export class app {
       throw new RenderErrror(`Failed to get an html element with property ${root}`)
     }
     el.innerHTML = app_component()
+    for (const cb of app.immediateRenders) {
+      cb()
+    }
+    app.immediateRenders = []
     app.isMounted = true
     for (const cb of app.renderCallbacks) {
       cb()
@@ -372,6 +421,12 @@ export class app {
  */
 export function onMount(cb) {
   app.renderCallbacks.push(cb)
+}
+/**
+ * @param {()=>unknown} cb 
+ */
+export function beforeMount(cb) {
+  app.immediateRenders.push(cb)
 }
 /**
  * @param {()=>unknown} cb 
@@ -505,6 +560,7 @@ export function useTry(fn, fallbackFn = () => /**@type {U}*/("")) {
     return fallbackFn(err)
   }
 }
+// DOM updates possible
 /**
  * Takes some async function and optionally displays a placeholder function while it is still running or error function if it fails. 
  * @param {()=>Promise<string>} fn 
@@ -517,22 +573,35 @@ export function useFuture(fn, fallbackFn = () => "", placeholderFn = () => "") {
   app.generatedComponentId++
   fn()
     .then((value) => {
+      const prevNested = app.isCurrNested
+      app.isCurrNested = true
       for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
         el.innerHTML = value
       }
-      for (const cb of app.renderCallbacks) {
-        cb()
+      if (!prevNested) {
+        for (const cb of app.renderCallbacks) {
+          cb()
+        }
+        app.renderCallbacks = []
       }
-      app.renderCallbacks = []
+      app.isCurrNested = prevNested
     })
     .catch((err) => {
+      const prevNested = app.isCurrNested
+      app.isCurrNested = true
       for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
         el.innerHTML = fallbackFn(err)
       }
       for (const cb of app.renderCallbacks) {
         cb()
       }
-      app.renderCallbacks = []
+      if (!prevNested) {
+        for (const cb of app.renderCallbacks) {
+          cb()
+        }
+        app.renderCallbacks = []
+      }
+      app.isCurrNested = prevNested
     })
   return `<div id="pico-element" class="pico-generated-id${id}">${placeholderFn !== undefined ? placeholderFn() : ""}</div>`
 }
@@ -553,18 +622,18 @@ function isArrayProxy(arr) {
 export function useEach(arr, fn = (x) => /**@type {string}*/(x)) {
   let finalStr = ""
   if (isArrayProxy(arr)) {
-    if (arr.length === 0) {
-      return `<li class="pico-state-id${arr["id"]}-idx-1 id="pico-array-element" style="display: none"></li>`
-    }
     arr["fn"] = fn
+    if (arr.length === 0) {
+      return `<div class="pico-state-id${arr["id"]}-idx-1 id="pico-array-element" style="display: none"></div>`
+    }
     for (let i = 0; i < arr.length; i++) {
       const res = fn(/**@type {T}*/(arr[i]))
-      finalStr += arr[`getItemRenderString${i}`] + res + "</li>"
+      finalStr += arr[`getItemRenderString${i}`] + res + "</div>"
     }
   } else {
     for (const item of arr) {
       const res = fn(item)
-      finalStr += `<li>${res}</li>`
+      finalStr += `<div>${res}</div>`
     }
   }
   return finalStr
