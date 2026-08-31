@@ -443,7 +443,7 @@ export function beforeMount(cb) {
   app.immediateRenders.push(cb)
 }
 /**
- * @param {()=>unknown} cb 
+ * @param {(e: Event)=>unknown} cb 
  * @returns {string}
  */
 export function bindClick(cb) {
@@ -455,7 +455,7 @@ export function bindClick(cb) {
   return `data-pico-listener="${local_id}"`
 }
 /**
- * @param {()=>unknown} cb 
+ * @param {(e: Event)=>unknown} cb 
  * @returns {string}
  */
 export function bindMouseover(cb) {
@@ -468,7 +468,7 @@ export function bindMouseover(cb) {
 }
 
 /**
- * @param {()=>unknown} cb 
+ * @param {(e: Event)=>unknown} cb 
  * @returns {string}
  */
 export function bindMouseenter(cb) {
@@ -482,7 +482,7 @@ export function bindMouseenter(cb) {
 }
 
 /**
- * @param {()=>unknown} cb 
+ * @param {(e: Event)=>unknown} cb 
  * @returns {string}
  */
 export function bindMousedown(cb) {
@@ -495,7 +495,7 @@ export function bindMousedown(cb) {
 }
 
 /**
- * @param {()=>unknown} cb 
+ * @param {(e: Event)=>unknown} cb 
  * @returns {string}
  */
 export function bindMouseup(cb) {
@@ -508,7 +508,7 @@ export function bindMouseup(cb) {
 }
 
 /**
- * @param {()=>unknown} cb 
+ * @param {(e: Event)=>unknown} cb 
  * @returns {string}
  */
 export function bindDblclick(cb) {
