@@ -5,6 +5,7 @@
    * [key: `getItemRenderString${number}`]: string
    * fn: (x: T) => string
    * id: number
+   * tag: string
    * } & Array<T>} ArrayProxy
  */
 
@@ -57,6 +58,7 @@ export class state {
      * @type {((x: U)=>string) | undefined}
      */
     let fn = undefined
+    let tag = "div"
     state.id++
     /**
      * @type {ProxyHandler<Array<U>>}
@@ -83,7 +85,7 @@ export class state {
           return value.bind(receiver)
         } else if (typeof prop === "string" && prop.startsWith("getItemRenderString")) {
           const index = parseInt(prop.substring(19))
-          return `<div id="pico-array-element" class="pico-state-id${id}-idx${index}">`
+          return `<${tag} id="pico-array-element" class="pico-state-id${id}-idx${index}">`
         } else if (prop === '__unsafe_raw_value') {
           return target
         } else if (prop === "id") {
@@ -103,9 +105,11 @@ export class state {
         if (prop === "__unsafe_raw_value") {
           receiver.splice(0, target.length, ...value)
           return true
-        }
-        if (prop === "fn") {
+        } else if (prop === "fn") {
           fn = value
+          return true
+        } else if (prop === "tag") {
+          tag = value
           return true
         }
         if (typeof prop === "string" && parseInt(prop).toString() === prop) {
@@ -118,15 +122,22 @@ export class state {
             if (existing) {
               existing.innerHTML = content
             } else {
-              const prevElement = document.querySelector(`.pico-state-id${id}-idx${index - 1}`)
-              const newHtml = `<div id="pico-array-element" class="pico-state-id${id}-idx${index}">${content}</div>`
-              if (prevElement) {
-                prevElement.insertAdjacentHTML("afterend", newHtml)
+              const sentinel = index === 0 ? document.querySelector(`.pico-state-id${id}-idx-1`) : null
+              if (sentinel) {
+                sentinel.removeAttribute("style")
+                sentinel.className = `pico-state-id${id}-idx0`
+                sentinel.innerHTML = content
               } else {
-                document.querySelector(`.pico-state-id${id}-list`)?.insertAdjacentHTML("afterbegin", newHtml)
+                const prevElement = document.querySelector(`.pico-state-id${id}-idx${index - 1}`)
+                const newHtml = `<${tag} id="pico-array-element" class="pico-state-id${id}-idx${index}">${content}</${tag}>`
+                if (prevElement) {
+                  prevElement.insertAdjacentHTML("afterend", newHtml)
+                } else {
+                  document.querySelector(`.pico-state-id${id}-list`)?.insertAdjacentHTML("afterbegin", newHtml)
+                }
               }
             }
-          })
+            })
           if (!prevNested) {
             for (const cb of app.immediateRenders) {
               cb()
@@ -617,23 +628,25 @@ function isArrayProxy(arr) {
  * @template T
  * @param {Iterable<T>} arr 
  * @param {((item: T)=>string) | undefined} fn
+ * @param {string | undefined} tag 
  * @returns {string}
  */
-export function useEach(arr, fn = (x) => /**@type {string}*/(x)) {
+export function useEach(arr, fn = (x) => /**@type {string}*/(x), tag = "div") {
   let finalStr = ""
   if (isArrayProxy(arr)) {
     arr["fn"] = fn
+    arr["tag"] = tag
     if (arr.length === 0) {
-      return `<div class="pico-state-id${arr["id"]}-idx-1 id="pico-array-element" style="display: none"></div>`
+      return `<${tag} class="pico-state-id${arr["id"]}-idx-1" id="pico-array-element" style="display: none"></${tag}>`
     }
     for (let i = 0; i < arr.length; i++) {
       const res = fn(/**@type {T}*/(arr[i]))
-      finalStr += arr[`getItemRenderString${i}`] + res + "</div>"
+      finalStr += arr[`getItemRenderString${i}`] + res + "</${tag}>"
     }
   } else {
     for (const item of arr) {
       const res = fn(item)
-      finalStr += `<div>${res}</div>`
+      finalStr += `<${tag}>${res}</${tag}>`
     }
   }
   return finalStr
