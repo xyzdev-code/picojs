@@ -122,22 +122,25 @@ export class state {
             if (existing) {
               existing.innerHTML = content
             } else {
-              const sentinel = index === 0 ? document.querySelector(`.pico-state-id${id}-idx-1`) : null
-              if (sentinel) {
-                sentinel.removeAttribute("style")
-                sentinel.className = `pico-state-id${id}-idx0`
-                sentinel.innerHTML = content
+              const newHtml =
+                `<${tag} id="pico-array-element" ` +
+                `class="pico-state-id${id}-idx${index}">` +
+                `${content}</${tag}>`
+
+              const prevElement = document.querySelector(
+                `.pico-state-id${id}-idx${index - 1}`
+              )
+
+              if (prevElement) {
+                prevElement.insertAdjacentHTML("afterend", newHtml)
               } else {
-                const prevElement = document.querySelector(`.pico-state-id${id}-idx${index - 1}`)
-                const newHtml = `<${tag} id="pico-array-element" class="pico-state-id${id}-idx${index}">${content}</${tag}>`
-                if (prevElement) {
-                  prevElement.insertAdjacentHTML("afterend", newHtml)
-                } else {
-                  document.querySelector(`.pico-state-id${id}-list`)?.insertAdjacentHTML("afterbegin", newHtml)
-                }
+                const parent = document.querySelector(
+                  `[data-pico-list="${id}"]`
+                )
+                parent?.insertAdjacentHTML("afterbegin", newHtml)
               }
             }
-            })
+          })
           if (!prevNested) {
             for (const cb of app.immediateRenders) {
               cb()
@@ -636,12 +639,9 @@ export function useEach(arr, fn = (x) => /**@type {string}*/(x), tag = "div") {
   if (isArrayProxy(arr)) {
     arr["fn"] = fn
     arr["tag"] = tag
-    if (arr.length === 0) {
-      return `<${tag} class="pico-state-id${arr["id"]}-idx-1" id="pico-array-element" style="display: none"></${tag}>`
-    }
     for (let i = 0; i < arr.length; i++) {
       const res = fn(/**@type {T}*/(arr[i]))
-      finalStr += arr[`getItemRenderString${i}`] + res + "</${tag}>"
+      finalStr += arr[`getItemRenderString${i}`] + res + `</${tag}>`
     }
   } else {
     for (const item of arr) {
