@@ -17,7 +17,7 @@ Should be quite simple, most of the primitives provided should be natural to the
 ```javascript
 function component(){
   const number = new state(0)
-  return html`<button ${bindClick((}=>{number.value++})}>${number}</button>`
+  return html`<button ${bindClick(()=>{number.value++})}>${number}</button>`
 }
 app.init(component)
 ```
