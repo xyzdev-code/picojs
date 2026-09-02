@@ -2,10 +2,10 @@
  * @template T
  * @typedef {{
    * __unsafe_raw_value: Array<T>
-   * [key: `getItemRenderString${number}`]: string
+   * value: Array<T>
    * fn: (x: T) => string
-   * id: number
    * tag: string
+   * id: number
    * } & Array<T>} ArrayProxy
  */
 
@@ -52,14 +52,23 @@ export class state {
      * @type {Set<()=>unknown>}
      */
     const dependencies = new Set()
-    const id = state.id
     let isMutating = false
     /**
      * @type {((x: U)=>string) | undefined}
      */
     let fn = undefined
     let tag = "div"
+    const id = state.id
     state.id++
+    /**
+     * @type {Array<Element>}
+     */
+    let elements = []
+    onMount(() => {
+      const parent = document.querySelector(`[data-pico-list="${id}"]`)
+      if (!parent) throw new RenderErrror(`No parent for list with data-pico-list="${id}"`)
+      elements = Array.from(parent.children)
+    })
     /**
      * @type {ProxyHandler<Array<U>>}
      */
@@ -83,10 +92,9 @@ export class state {
             }
           }
           return value.bind(receiver)
-        } else if (typeof prop === "string" && prop.startsWith("getItemRenderString")) {
-          const index = parseInt(prop.substring(19))
-          return `<${tag} id="pico-array-element" class="pico-state-id${id}-idx${index}">`
-        } else if (prop === '__unsafe_raw_value') {
+        } else if (typeof prop === "string" && prop === "getRenderString") {
+          return `<${tag} id="pico-array-element">`
+        } else if (prop === '__unsafe_raw_value' || prop === "value") {
           return target
         } else if (prop === "id") {
           return id
@@ -102,42 +110,78 @@ export class state {
       },
       // DOM updates possible
       set(target, prop, value, receiver) {
-        if (prop === "__unsafe_raw_value") {
-          receiver.splice(0, target.length, ...value)
-          return true
+        let result = true
+        let mutated = false
+        if (prop === "value") {
+          target.length = 0
+          target.push(...value)
+          const prevNested = app.isCurrNested
+          app.isCurrNested = true
+          beforeMount(() => {
+            const parent = document.querySelector(
+              `[data-pico-list="${id}"]`
+            )
+            if (!parent) throw new RenderErrror(`No parent for list with data-pico-list="${id}"`)
+            let html = ""
+            for (let i = 0; i < target.length; i++) {
+              const content = fn ? fn(/**@type {U}*/(target[i])) : target[i]
+              html += `<${tag} id="pico-array-element">${content}</${tag}>`
+            }
+            parent.innerHTML = html
+            elements = Array.from(parent.children)
+          })
+          if (!prevNested) {
+            for (const cb of app.immediateRenders) {
+              cb()
+            }
+            app.immediateRenders = []
+            for (const cb of app.renderCallbacks) {
+              cb()
+            }
+            app.renderCallbacks = []
+          }
+          app.isCurrNested = prevNested
+          mutated = true
         } else if (prop === "fn") {
           fn = value
           return true
         } else if (prop === "tag") {
           tag = value
           return true
-        }
-        if (typeof prop === "string" && parseInt(prop).toString() === prop) {
+        } else if (prop === "__unsafe_raw_value") {
+          target.length = 0
+          target.push(...value)
+          return true
+        } else if (typeof prop === "string" && parseInt(prop).toString() === prop) {
           const prevNested = app.isCurrNested
           app.isCurrNested = true
           const index = parseInt(prop)
           const content = fn ? fn(value) : value
           beforeMount(() => {
-            const existing = document.querySelector(`.pico-state-id${id}-idx${index}`)
+            const existing = elements[index]
             if (existing) {
               existing.innerHTML = content
             } else {
-              const newHtml =
-                `<${tag} id="pico-array-element" ` +
-                `class="pico-state-id${id}-idx${index}">` +
-                `${content}</${tag}>`
-
-              const prevElement = document.querySelector(
-                `.pico-state-id${id}-idx${index - 1}`
-              )
-
+              const newHtml = `<${tag} id="pico-array-element">${content}</${tag}>`
+              const prevElement = elements[index - 1]
               if (prevElement) {
                 prevElement.insertAdjacentHTML("afterend", newHtml)
+                if (index === elements.length) {
+                  elements.push(/**@type {Element}*/(prevElement.nextElementSibling))
+                } else {
+                  elements[index] = /**@type {Element}*/(prevElement.nextElementSibling)
+                }
               } else {
                 const parent = document.querySelector(
                   `[data-pico-list="${id}"]`
                 )
-                parent?.insertAdjacentHTML("afterbegin", newHtml)
+                if (!parent) throw new RenderErrror(`No parent for list with data-pico-list="${id}"`)
+                parent.insertAdjacentHTML("afterbegin", newHtml)
+                if (index === elements.length) {
+                  elements.push(/**@type {Element}*/(parent.firstElementChild))
+                } else {
+                  elements[index] = /**@type {Element}*/(parent.firstElementChild)
+                }
               }
             }
           })
@@ -152,9 +196,12 @@ export class state {
             app.renderCallbacks = []
           }
           app.isCurrNested = prevNested
+          result = Reflect.set(target, prop, value, receiver)
+          mutated = target[/** @type {any} */ (prop)] !== value
+        } else {
+          result = Reflect.set(target, prop, value, receiver)
+          mutated = target[/** @type {any} */ (prop)] !== value
         }
-        const mutated = target[/**@type {any}*/(prop)] !== value
-        const result = Reflect.set(target, prop, value, receiver)
         if (mutated && !isMutating) {
           for (const dependency of [...dependencies]) {
             if (state.runningEffects.has(dependency)) continue
@@ -169,8 +216,10 @@ export class state {
           const prevNested = app.isCurrNested
           app.isCurrNested = true
           beforeMount(() => {
-            const el = document.querySelector(`.pico-state-id${id}-idx${prop}`)
-            if (el) el.remove()
+            if (elements[parseInt(prop)]) {
+              elements[parseInt(prop)]?.remove()
+              elements.splice(parseInt(prop), 1)
+            }
           })
           if (!prevNested) {
             for (const cb of app.immediateRenders) {
@@ -185,16 +234,18 @@ export class state {
           app.isCurrNested = prevNested
         }
         const result = Reflect.deleteProperty(target, prop)
-        for (const dependency of [...dependencies]) {
-          if (state.runningEffects.has(dependency)) continue
-          try {
-            dependency()
-          } catch (err) { }
+        if (!isMutating) {
+          for (const dependency of [...dependencies]) {
+            if (state.runningEffects.has(dependency)) continue
+            try {
+              dependency()
+            } catch (err) { }
+          }
         }
         return result
       },
       has(target, prop) {
-        if (prop === "getRenderString" || prop === "__unsafe_raw_value" || prop === "fn" || prop === "id") {
+        if (prop === "__unsafe_raw_value" || prop === "fn" || prop === "tag" || prop === "value") {
           return true
         }
         return prop in target
@@ -625,7 +676,7 @@ export function useFuture(fn, fallbackFn = () => "", placeholderFn = () => "") {
  * @returns {arr is ArrayProxy<T>}
  */
 function isArrayProxy(arr) {
-  return "getRenderString" in arr
+  return "tag" in arr
 }
 /**
  * @template T
@@ -641,7 +692,7 @@ export function useEach(arr, fn = (x) => /**@type {string}*/(x), tag = "div") {
     arr["tag"] = tag
     for (let i = 0; i < arr.length; i++) {
       const res = fn(/**@type {T}*/(arr[i]))
-      finalStr += arr[`getItemRenderString${i}`] + res + `</${tag}>`
+      finalStr += `<${tag} id="pico-array-element">` + res + `</${tag}>`
     }
   } else {
     for (const item of arr) {
@@ -650,4 +701,12 @@ export function useEach(arr, fn = (x) => /**@type {string}*/(x), tag = "div") {
     }
   }
   return finalStr
+}
+/**
+ * @template T
+ * @param {ArrayProxy<T>} arr 
+ * @returns {string}
+ */
+export function listId(arr) {
+  return `data-pico-list=${arr.id}`
 }
