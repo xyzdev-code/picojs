@@ -54,18 +54,22 @@ export class state {
     const dependencies = new Set()
     let isMutating = false
     /**
-     * @type {((x: U)=>string) | undefined}
+     * @type {((x: U)=>string)}
      */
-    let fn = undefined
-    let tag = "div"
+    let fn = (x) => /**@type {string}*/(x)
+    let tag = "li"
     const id = state.id
     state.id++
     /**
      * @type {Array<Element>}
      */
     let elements = []
+    /**
+     * @type {Element}
+     */
+    let parent
     onMount(() => {
-      const parent = document.querySelector(`[data-pico-list="${id}"]`)
+      parent = /**@type {Element}*/(document.querySelector(`[data-pico-list="${id}"]`))
       if (!parent) throw new RenderErrror(`No parent for list with data-pico-list="${id}"`)
       elements = Array.from(parent.children)
     })
@@ -76,7 +80,45 @@ export class state {
       get(target, prop, receiver) {
         const value = Reflect.get(target, prop, receiver)
         if (typeof value === "function" && typeof prop === "string") {
-          if (PICO_ARRAY_MUTATORS.has(prop)) {
+          // Fast path for .push
+          if (prop === "push") {
+            /** 
+              * @param {Array<U>} items
+              */
+            return (...items) => {
+              const prevNested = app.isCurrNested
+              app.isCurrNested = true
+              isMutating = true
+              const start = target.length
+              const result = target.push(...items)
+              isMutating = false
+              beforeMount(() => {
+                for (let i = start; i < target.length; i++) {
+                  const newHtml = `<${tag} id="pico-array-element">${fn(/**@type {U}*/(target[i]))}</${tag}>`
+                  parent.insertAdjacentHTML("beforeend", newHtml)
+                  elements.push(/**@type {Element}*/(parent.lastElementChild))
+                }
+              })
+              if (!isMutating) {
+                for (const dependency of [...dependencies]) {
+                  if (state.runningEffects.has(dependency)) continue
+                  try { dependency() } catch (err) { }
+                }
+              }
+              if (!prevNested) {
+                for (const cb of app.immediateRenders) {
+                  cb()
+                }
+                app.immediateRenders = []
+
+                for (const cb of app.renderCallbacks) {
+                  cb()
+                }
+                app.renderCallbacks = []
+              }
+              app.isCurrNested = prevNested
+            }
+          } else if (PICO_ARRAY_MUTATORS.has(prop)) {
             /** 
               * @param {Parameters<typeof value>} args
               */
@@ -118,14 +160,10 @@ export class state {
           const prevNested = app.isCurrNested
           app.isCurrNested = true
           beforeMount(() => {
-            const parent = document.querySelector(
-              `[data-pico-list="${id}"]`
-            )
             if (!parent) throw new RenderErrror(`No parent for list with data-pico-list="${id}"`)
             let html = ""
             for (let i = 0; i < target.length; i++) {
-              const content = fn ? fn(/**@type {U}*/(target[i])) : target[i]
-              html += `<${tag} id="pico-array-element">${content}</${tag}>`
+              html += `<${tag} id="pico-array-element">${fn(/**@type {U}*/(target[i]))}</${tag}>`
             }
             parent.innerHTML = html
             elements = Array.from(parent.children)
@@ -156,7 +194,7 @@ export class state {
           const prevNested = app.isCurrNested
           app.isCurrNested = true
           const index = parseInt(prop)
-          const content = fn ? fn(value) : value
+          const content = fn(value)
           beforeMount(() => {
             const existing = elements[index]
             if (existing) {
@@ -172,10 +210,6 @@ export class state {
                   elements[index] = /**@type {Element}*/(prevElement.nextElementSibling)
                 }
               } else {
-                const parent = document.querySelector(
-                  `[data-pico-list="${id}"]`
-                )
-                if (!parent) throw new RenderErrror(`No parent for list with data-pico-list="${id}"`)
                 parent.insertAdjacentHTML("afterbegin", newHtml)
                 if (index === elements.length) {
                   elements.push(/**@type {Element}*/(parent.firstElementChild))
@@ -442,6 +476,10 @@ export class app {
   static generatedComponentId = 0
   static listId = 0
   static isCurrNested = false
+  /** 
+    * @type {Object<number, (e: Event)=>unknown>}
+    */
+  static delegatedEvents = {}
   /**
    * @param {()=>Promise<string>} asyncAppComponent 
    * @param {string} root 
@@ -495,79 +533,106 @@ export function beforeMount(cb) {
 }
 /**
  * @param {(e: Event)=>unknown} cb 
+ * @param {boolean} [delegated=false] 
  * @returns {string}
  */
-export function bindClick(cb) {
+export function bindClick(cb, delegated = false) {
+  const localId = app.eventListenerId
+  app.eventListenerId += 1
+  if (!delegated) {
+    onMount(() => {
+      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("click", cb)
+    })
+  } else {
+    app.delegatedEvents[localId] = cb
+  }
+  return `data-pico-listener="${localId}"`
+}
+/**
+ * @param {(e: Event)=>unknown} cb 
+ * @param {boolean} [delegated=false] 
+ * @returns {string}
+ */
+export function bindMouseover(cb, delegated = false) {
   const local_id = app.eventListenerId
   app.eventListenerId += 1
-  onMount(() => {
-    document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("click", cb)
-  })
-  return `data-pico-listener="${local_id}"`
-}
-/**
- * @param {(e: Event)=>unknown} cb 
- * @returns {string}
- */
-export function bindMouseover(cb) {
-  const local_id = app.eventListenerId
-  app.eventListenerId += 1
-  onMount(() => {
-    document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("mouseover", cb)
-  })
+  if (!delegated) {
+    onMount(() => {
+      document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("mouseover", cb)
+    })
+  } else {
+    app.delegatedEvents[local_id] = cb
+  }
   return `data-pico-listener="${local_id}"`
 }
 
 /**
  * @param {(e: Event)=>unknown} cb 
+ * @param {boolean} [delegated=false] 
  * @returns {string}
  */
-export function bindMouseenter(cb) {
+export function bindMouseenter(cb, delegated = false) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
-  onMount(() => {
-    document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mouseenter", cb)
-  })
-
+  if (!delegated) {
+    onMount(() => {
+      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mouseenter", cb)
+    })
+  } else {
+    app.delegatedEvents[localId] = cb
+  }
   return `data-pico-listener="${localId}"`
 }
 
 /**
  * @param {(e: Event)=>unknown} cb 
+ * @param {boolean} [delegated=false] 
  * @returns {string}
  */
-export function bindMousedown(cb) {
+export function bindMousedown(cb, delegated = false) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
-  onMount(() => {
-    document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mousedown", cb)
-  })
+  if (!delegated) {
+    onMount(() => {
+      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mousedown", cb)
+    })
+  } else {
+    app.delegatedEvents[localId] = cb
+  }
   return `data-pico-listener="${localId}"`
 }
 
 /**
  * @param {(e: Event)=>unknown} cb 
+ * @param {boolean} [delegated=false] 
  * @returns {string}
  */
-export function bindMouseup(cb) {
+export function bindMouseup(cb, delegated = false) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
-  onMount(() => {
-    document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mouseup", cb)
-  })
+  if (!delegated) {
+    onMount(() => {
+      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("mouseup", cb)
+    })
+  } else {
+    app.delegatedEvents[localId] = cb
+  }
   return `data-pico-listener="${localId}"`
 }
 
 /**
  * @param {(e: Event)=>unknown} cb 
+ * @param {boolean} [delegated=false] 
  * @returns {string}
  */
-export function bindDblclick(cb) {
+export function bindDblclick(cb, delegated = false) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
-  onMount(() => {
-    document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("dblclick", cb)
-  })
+  if (!delegated) {
+    onMount(() => {
+      document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("dblclick", cb)
+    })
+  }
   return `data-pico-listener="${localId}"`
 }
 /**
@@ -575,16 +640,16 @@ export function bindDblclick(cb) {
  * @returns {string}
  */
 export function bindChecked(cb) {
-  const local_id = app.eventListenerId
+  const localId = app.eventListenerId
   app.eventListenerId += 1
   onMount(() => {
-    document.querySelector(`[data-pico-listener="${local_id}"]`)?.addEventListener("change", (event) => {
+    document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("change", (event) => {
       if (/**@type {HTMLInputElement}*/(event.target).checked) {
         cb(/**@type {HTMLInputElement}*/(event.target).checked)
       }
     })
   })
-  return `data-pico-listener="${local_id}"`
+  return `data-pico-listener="${localId}"`
 }
 /**
  * @param {state<string | number>} boundVar 
@@ -681,11 +746,12 @@ function isArrayProxy(arr) {
 /**
  * @template T
  * @param {Iterable<T>} arr 
- * @param {((item: T)=>string) | undefined} fn
- * @param {string | undefined} tag 
+ * @param {((item: T)=>string) | undefined} [fn=(x)=>x]
+ * @param {string | undefined} [tag="li"]
+ * @param {boolean} [delegate=false] 
  * @returns {string}
  */
-export function useEach(arr, fn = (x) => /**@type {string}*/(x), tag = "div") {
+export function useEach(arr, fn = (x) => /**@type {string}*/(x), tag = "li", delegate = false) {
   let finalStr = ""
   if (isArrayProxy(arr)) {
     arr["fn"] = fn
@@ -693,6 +759,19 @@ export function useEach(arr, fn = (x) => /**@type {string}*/(x), tag = "div") {
     for (let i = 0; i < arr.length; i++) {
       const res = fn(/**@type {T}*/(arr[i]))
       finalStr += `<${tag} id="pico-array-element">` + res + `</${tag}>`
+    }
+    if (delegate) {
+      onMount(() => {
+        document.querySelector(`[data-pico-list="${arr.id}"]`)?.addEventListener("click", (event) => {
+          const el = /**@type {Element}*/(event.target).closest("[data-pico-listener]")
+          const listenerId = parseInt(/**@type {string}*/(el?.getAttribute("data-pico-listener")))
+          const delegatedEvent = Object.create(event);
+          Object.defineProperty(delegatedEvent, "currentTarget", {
+            value: el
+          });
+          /**@type {(e: Event)=>unknown}*/(app.delegatedEvents[listenerId])(delegatedEvent)
+        })
+      })
     }
   } else {
     for (const item of arr) {
