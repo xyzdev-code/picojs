@@ -1,6 +1,6 @@
 {
   "name": "@xyzdev-code/picojs",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A minimal Javascript framework.",
   "homepage": "https://github.com/xyzdev-code/picojs#readme",
   "bugs": {
@@ -23,7 +23,10 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "files": ["./dist/src/pico.d.ts", "./src/pico.js"],
+  "files": [
+    "./dist/src/pico.d.ts",
+    "./src/pico.js"
+  ],
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@html-eslint/eslint-plugin": "^0.64.0",
