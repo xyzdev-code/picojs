@@ -80,8 +80,8 @@ export class state {
       get(target, prop, receiver) {
         const value = Reflect.get(target, prop, receiver)
         if (typeof value === "function" && typeof prop === "string") {
-          // Fast path for .push
           if (prop === "push") {
+            // Fast path for .push
             /** 
               * @param {Array<U>} items
               */
@@ -93,11 +93,13 @@ export class state {
               const result = target.push(...items)
               isMutating = false
               beforeMount(() => {
+                let newHtml = ""
                 for (let i = start; i < target.length; i++) {
-                  const newHtml = `<${tag} id="pico-array-element">${fn(/**@type {U}*/(target[i]))}</${tag}>`
-                  parent.insertAdjacentHTML("beforeend", newHtml)
-                  elements.push(/**@type {Element}*/(parent.lastElementChild))
+                  newHtml += `<${tag} id="pico-array-element">${fn(/**@type {U}*/(target[i]))}</${tag}>`
                 }
+                parent.insertAdjacentHTML("beforeend", newHtml)
+                const newElements = Array.from(parent.children).slice(start)
+                elements.push(...newElements)
               })
               if (!isMutating) {
                 for (const dependency of [...dependencies]) {
@@ -117,6 +119,61 @@ export class state {
                 app.renderCallbacks = []
               }
               app.isCurrNested = prevNested
+            }
+          } else if (prop === "splice") {
+            // Fast path for .splice
+            /** 
+              * @param {number} start
+              * @param {number} deleteCount
+              * @param {U[]}
+              */
+            return (start, deleteCount, ...items) => {
+              const prevNested = app.isCurrNested
+              app.isCurrNested = true
+              const len = target.length
+              if (start < 0) {
+                start = Math.max(len + start, 0)
+              }
+              deleteCount = Math.min(Math.max(deleteCount, 0), len - start)
+              isMutating = true
+              const removed = target.splice(start, deleteCount, ...items)
+              isMutating = false
+              const removedElements = elements.splice(start, deleteCount)
+              for (const el of removedElements) {
+                el.remove()
+              }
+              for (let i = 0; i < items.length; i++) {
+                const index = start + i
+                const content = fn(/**@type {U}*/(items[i]))
+                const newHtml = `<${tag} id="pico-array-element">${content}</${tag}>`
+                if (index === 0) {
+                  parent.insertAdjacentHTML("afterbegin", newHtml)
+                  elements.splice(0, 0,/** @type {Element} */(parent.firstElementChild))
+                } else {
+                  const previous = elements[index - 1]
+                  previous?.insertAdjacentHTML("afterend", newHtml)
+                  elements.splice(index, 0,/** @type {Element} */(previous?.nextElementSibling))
+                }
+              }
+              if (!isMutating) {
+                for (const dependency of [...dependencies]) {
+                  if (state.runningEffects.has(dependency)) continue
+                  try { dependency() } catch (err) { }
+                }
+              }
+              if (!prevNested) {
+                for (const cb of app.immediateRenders) {
+                  cb()
+                }
+                app.immediateRenders = []
+
+                for (const cb of app.renderCallbacks) {
+                  cb()
+                }
+                app.renderCallbacks = []
+              }
+              app.isCurrNested = prevNested
+              return removed
             }
           } else if (PICO_ARRAY_MUTATORS.has(prop)) {
             /** 
@@ -156,29 +213,34 @@ export class state {
         let mutated = false
         if (prop === "value") {
           target.length = 0
-          target.push(...value)
-          const prevNested = app.isCurrNested
-          app.isCurrNested = true
-          beforeMount(() => {
-            if (!parent) throw new RenderErrror(`No parent for list with data-pico-list="${id}"`)
-            let html = ""
-            for (let i = 0; i < target.length; i++) {
-              html += `<${tag} id="pico-array-element">${fn(/**@type {U}*/(target[i]))}</${tag}>`
+          if (value.length === 0) {
+            parent.replaceChildren()
+            elements.length = 0
+          } else {
+            target.push(...value)
+            const prevNested = app.isCurrNested
+            app.isCurrNested = true
+            beforeMount(() => {
+              if (!parent) throw new RenderErrror(`No parent for list with data-pico-list="${id}"`)
+              let html = ""
+              for (let i = 0; i < target.length; i++) {
+                html += `<${tag} id="pico-array-element">${fn(/**@type {U}*/(target[i]))}</${tag}>`
+              }
+              parent.innerHTML = html
+              elements = Array.from(parent.children)
+            })
+            if (!prevNested) {
+              for (const cb of app.immediateRenders) {
+                cb()
+              }
+              app.immediateRenders = []
+              for (const cb of app.renderCallbacks) {
+                cb()
+              }
+              app.renderCallbacks = []
             }
-            parent.innerHTML = html
-            elements = Array.from(parent.children)
-          })
-          if (!prevNested) {
-            for (const cb of app.immediateRenders) {
-              cb()
-            }
-            app.immediateRenders = []
-            for (const cb of app.renderCallbacks) {
-              cb()
-            }
-            app.renderCallbacks = []
+            app.isCurrNested = prevNested
           }
-          app.isCurrNested = prevNested
           mutated = true
         } else if (prop === "fn") {
           fn = value

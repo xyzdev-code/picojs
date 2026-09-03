@@ -2,18 +2,18 @@
  * @template T
  * @typedef {{
    * __unsafe_raw_value: Array<T>
-   * [key: `getItemRenderString${number}`]: string
+   * value: Array<T>
    * fn: (x: T) => string
-   * id: number
    * tag: string
+   * id: number
    * } & Array<T>} ArrayProxy
  */
 export type ArrayProxy<T> = {
     __unsafe_raw_value: Array<T>;
-    [key: `getItemRenderString${number}`]: string;
+    value: Array<T>;
     fn: (x: T) => string;
-    id: number;
     tag: string;
+    id: number;
 } & Array<T>;
 /**
  * Defines a reactive object that is tracked by effect, computed etc and automatically updated by pico in the html.
@@ -139,6 +139,10 @@ export declare class app {
     static listId: number;
     static isCurrNested: boolean;
     /**
+      * @type {Object<number, (e: Event)=>unknown>}
+      */
+    static delegatedEvents: Record<number, (e: Event) => unknown>;
+    /**
      * @param {()=>Promise<string>} asyncAppComponent
      * @param {string} root
      * @returns {Promise<app>}
@@ -167,34 +171,40 @@ export declare function onMount(cb: () => unknown): void;
 export declare function beforeMount(cb: () => unknown): void;
 /**
  * @param {(e: Event)=>unknown} cb
+ * @param {boolean} [delegated=false]
  * @returns {string}
  */
-export declare function bindClick(cb: (e: Event) => unknown): string;
+export declare function bindClick(cb: (e: Event) => unknown, delegated?: boolean): string;
 /**
  * @param {(e: Event)=>unknown} cb
+ * @param {boolean} [delegated=false]
  * @returns {string}
  */
-export declare function bindMouseover(cb: (e: Event) => unknown): string;
+export declare function bindMouseover(cb: (e: Event) => unknown, delegated?: boolean): string;
 /**
  * @param {(e: Event)=>unknown} cb
+ * @param {boolean} [delegated=false]
  * @returns {string}
  */
-export declare function bindMouseenter(cb: (e: Event) => unknown): string;
+export declare function bindMouseenter(cb: (e: Event) => unknown, delegated?: boolean): string;
 /**
  * @param {(e: Event)=>unknown} cb
+ * @param {boolean} [delegated=false]
  * @returns {string}
  */
-export declare function bindMousedown(cb: (e: Event) => unknown): string;
+export declare function bindMousedown(cb: (e: Event) => unknown, delegated?: boolean): string;
 /**
  * @param {(e: Event)=>unknown} cb
+ * @param {boolean} [delegated=false]
  * @returns {string}
  */
-export declare function bindMouseup(cb: (e: Event) => unknown): string;
+export declare function bindMouseup(cb: (e: Event) => unknown, delegated?: boolean): string;
 /**
  * @param {(e: Event)=>unknown} cb
+ * @param {boolean} [delegated=false]
  * @returns {string}
  */
-export declare function bindDblclick(cb: (e: Event) => unknown): string;
+export declare function bindDblclick(cb: (e: Event) => unknown, delegated?: boolean): string;
 /**
  * @param {(is_checked: boolean)=>unknown} cb
  * @returns {string}
@@ -225,8 +235,15 @@ export declare function useFuture(fn: () => Promise<string>, fallbackFn?: ((err:
 /**
  * @template T
  * @param {Iterable<T>} arr
- * @param {((item: T)=>string) | undefined} fn
- * @param {string | undefined} tag
+ * @param {((item: T)=>string) | undefined} [fn=(x)=>x]
+ * @param {string | undefined} [tag="li"]
+ * @param {boolean} [delegate=false]
  * @returns {string}
  */
-export declare function useEach<T>(arr: Iterable<T>, fn?: ((item: T) => string) | undefined, tag?: string | undefined): string;
+export declare function useEach<T>(arr: Iterable<T>, fn?: ((item: T) => string) | undefined, tag?: string | undefined, delegate?: boolean): string;
+/**
+ * @template T
+ * @param {ArrayProxy<T>} arr
+ * @returns {string}
+ */
+export declare function listId<T>(arr: ArrayProxy<T>): string;
