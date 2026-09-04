@@ -1,4 +1,7 @@
 import {app, useEach, state, html, bindClick, listId, effect, useFuture} from "./pico.js"
+/**
+ * @param {number} ms 
+ */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function lazy(){
   const a = new state(9)

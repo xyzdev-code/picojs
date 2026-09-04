@@ -44,10 +44,17 @@ export declare class state<T> {
      */
     id;
     /**
+      * @package
+      * @type {Array<Element>}
+      */
+    _elements: Array<Element>;
+    _initialBuildElemets: boolean;
+    /**
       * @private
       * @type {number}
       */
     private static id;
+    static uniqueId: number;
     /**
       * @type{(()=>unknown) | undefined}
       */

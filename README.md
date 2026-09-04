@@ -1,7 +1,7 @@
 # Picojs
 A minimal Javascript framework written in plain js with jsdoc for type safety. Did this in my free time, expect bugs. 
 ## Features
-- Small bundle size (~3kb minified and gzipped)
+- Small bundle size (~2.6kb minified and gzipped)
 - Probably fast (at least on my computer, not a serious metric)
 - No build step, just include the pico.js file in the src/ directory
 - I test this against the js framework benchmark every release on my computer, so should be stable and performant enough for a hobby project

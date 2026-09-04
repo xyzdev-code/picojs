@@ -22,7 +22,7 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "prepublishOnly": "tsgo && npx uglify-js ./src/pico.js -o ./dist/src/pico.min.js && gzip ./dist/src/pico.min.js"
+    "prepublishOnly": "tsgo && npx terser ./src/pico.js -c -m -o ./dist/src/pico.min.js && gzip ./dist/src/pico.min.js"
   },
   "files": [
     "./dist/src/pico.d.ts",
