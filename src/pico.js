@@ -28,6 +28,7 @@ export class state {
     * @type {number}
     */
   static id = 0
+  static uniqueId = 0
   /**
     * @type{(()=>unknown) | undefined}
     */
@@ -370,6 +371,12 @@ export class state {
      */
     this.id = state.id
     state.id++
+    /** 
+      * @package
+      * @type {Array<Element>}
+      */
+    this._elements = []
+    this._initialBuildElemets = true
   }
   /** 
     * Returns the value without tracking
@@ -409,8 +416,12 @@ export class state {
       app.isCurrNested = true
       this._value = newValue
       onMount(() => {
-        for (const el of document.querySelectorAll(`.pico-state-id${this.id}`)) {
-          el.textContent = /**@type {string | null}*/ (this._value)
+        if (this._initialBuildElemets) {
+          this._elements = Array.from(document.querySelectorAll(`.pico-state-id${this.id}`))
+          this._initialBuildElemets = false
+        }
+        for (const el of this._elements) {
+          el.innerHTML = /**@type {string}*/ (this._value)
         }
       })
       if (!prevNested) {
@@ -437,7 +448,8 @@ export class state {
    * @returns {string}
    */
   getRenderString() {
-    return `<span id="pico-element" class="pico-state-id${this.id}">${this._value}</span>`
+    state.uniqueId += 1
+    return `<span id="pico-element" class="pico-state-id${this.id} pico-unique-state-id${state.uniqueId}">${this._value}</span>`
   }
 }
 export class RenderErrror extends Error { }
