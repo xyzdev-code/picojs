@@ -13,10 +13,11 @@ function App(){
   effect(()=>{
     console.log(`This is changed ${arr[arr.length-1]}`)
   })
+  const count = new state(0)
   return html`
   <ol ${listId(arr)}>
     ${useEach(arr, (x)=>{
-      return html`<button ${bindClick(()=>console.log(x))}>${x}</button>`
+      return html`<button ${bindClick(()=>console.log(x))}>${x} ${count}</button>`
     }, "li")}
     </ol>
   <button ${bindClick(()=>arr.push(Date.now()))}>push</button>
@@ -24,6 +25,7 @@ function App(){
     <button ${bindClick(()=>{
       arr.value = [Date.now()]
     })}>Click</button>
+    <button ${bindClick(()=>{count.value+=1})}>Count+</button>
   ${useFuture(lazy)}
   `
 }

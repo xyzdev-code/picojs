@@ -415,15 +415,13 @@ export class state {
       const prevNested = app.isCurrNested
       app.isCurrNested = true
       this._value = newValue
-      onMount(() => {
-        if (this._initialBuildElemets) {
-          this._elements = Array.from(document.querySelectorAll(`.pico-state-id${this.id}`))
-          this._initialBuildElemets = false
-        }
-        for (const el of this._elements) {
-          el.innerHTML = /**@type {string}*/ (this._value)
-        }
-      })
+      if (this._initialBuildElemets) {
+        this._elements = Array.from(document.querySelectorAll(`.pico-state-id${this.id}`))
+        this._initialBuildElemets = false
+      }
+      for (const el of this._elements) {
+        el.innerHTML = /**@type {string}*/ (this._value)
+      }
       if (!prevNested) {
         for (const cb of app.immediateRenders) {
           cb()
@@ -529,7 +527,8 @@ export function html(strings, ...args) {
   for (let i = 0; i < args.length; i++) {
     str += strings[i]
     if (args[i] instanceof state) {
-      str += /** @type {state<unknown>} */ (args[i]).getRenderString()
+      str += /** @type {state<unknown>} */ (args[i]).getRenderString();
+      /**@type {state<unknown>}*/(args[i])._initialBuildElemets = true
     } else {
       str += args[i]
     }
