@@ -4,16 +4,14 @@
    * __unsafe_raw_value: Array<T>
    * value: Array<T>
    * fn: (x: T) => string
-   * tag: string
-   * id: number
+   * __parents: ref
    * } & Array<T>} ArrayProxy
  */
 export type ArrayProxy<T> = {
     __unsafe_raw_value: Array<T>;
     value: Array<T>;
     fn: (x: T) => string;
-    tag: string;
-    id: number;
+    __parents: ref;
 } & Array<T>;
 /**
  * Defines a reactive object that is tracked by effect, computed etc and automatically updated by pico in the html.
@@ -141,6 +139,10 @@ export declare class app {
       */
     static immediateRenders: Array<() => unknown>;
     static eventListenerId: number;
+    /**
+      * @type {Array<()=>unknown>}
+      */
+    static afterMounts: Array<() => unknown>;
     static isMounted: boolean;
     static generatedComponentId: number;
     static listId: number;
@@ -176,6 +178,10 @@ export declare function onMount(cb: () => unknown): void;
  * @param {()=>unknown} cb
  */
 export declare function beforeMount(cb: () => unknown): void;
+/**
+ * @param {()=>unknown} cb
+ */
+export declare function afterMount(cb: () => unknown): void;
 /**
  * @param {(e: Event)=>unknown} cb
  * @param {boolean} [delegated=false]
@@ -242,15 +248,26 @@ export declare function useFuture(fn: () => Promise<string>, fallbackFn?: ((err:
 /**
  * @template T
  * @param {Iterable<T>} arr
+ * @param {ref} ref
  * @param {((item: T)=>string) | undefined} [fn=(x)=>x]
- * @param {string | undefined} [tag="li"]
  * @param {boolean} [delegate=false]
  * @returns {string}
  */
-export declare function useEach<T>(arr: Iterable<T>, fn?: ((item: T) => string) | undefined, tag?: string | undefined, delegate?: boolean): string;
-/**
- * @template T
- * @param {ArrayProxy<T>} arr
- * @returns {string}
- */
-export declare function listId<T>(arr: ArrayProxy<T>): string;
+export declare function useEach<T>(arr: Iterable<T>, ref: ref, fn?: ((item: T) => string) | undefined, delegate?: boolean): string;
+export declare class ref {
+    key: string;
+    /**
+     * @package
+     */
+    _element: Element | null;
+    /**
+     * @param {string} key
+     */
+    constructor(key: string);
+    /**
+     * @param {(el: Element)=>unknown} fn
+     * @returns
+     */
+    deref(fn: (el: Element) => unknown): void;
+    toString(): string;
+}
