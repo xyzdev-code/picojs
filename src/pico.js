@@ -4,8 +4,7 @@
    * __unsafe_raw_value: Array<T>
    * value: Array<T>
    * fn: (x: T) => string
-   * tag: string
-   * id: number
+   * __parents: ref
    * } & Array<T>} ArrayProxy
  */
 
@@ -55,24 +54,23 @@ export class state {
     const dependencies = new Set()
     let isMutating = false
     /**
-     * @type {((x: U)=>string)}
+     * @type {Array<(x: U)=>string>}
      */
-    let fn = (x) => /**@type {string}*/(x)
-    let tag = "li"
+    const fns = []
     const id = state.id
     state.id++
     /**
-     * @type {Array<Element>}
+     * @type {Array<Array<Element>>}
      */
-    let elements = []
+    let elementss = []
     /**
-     * @type {Element}
+     * @type {Array<ref>}
      */
-    let parent
-    onMount(() => {
-      parent = /**@type {Element}*/(document.querySelector(`[data-pico-list="${id}"]`))
-      if (!parent) throw new RenderErrror(`No parent for list with data-pico-list="${id}"`)
-      elements = Array.from(parent.children)
+    const parents = []
+    afterMount(() => {
+      for (let i = 0; i < parents.length; i++) {
+        elementss.push(Array.from(/**@type {Element}*/(parents[i]?._element).children))
+      }
     })
     /**
      * @type {ProxyHandler<Array<U>>}
@@ -93,15 +91,19 @@ export class state {
               const start = target.length
               const result = target.push(...items)
               isMutating = false
-              beforeMount(() => {
-                let newHtml = ""
-                for (let i = start; i < target.length; i++) {
-                  newHtml += `<${tag} id="pico-array-element">${fn(/**@type {U}*/(target[i]))}</${tag}>`
-                }
-                parent.insertAdjacentHTML("beforeend", newHtml)
-                const newElements = Array.from(parent.children).slice(start)
-                elements.push(...newElements)
-              })
+              if (app.isMounted) {
+                beforeMount(() => {
+                  for (let i = 0; i < parents.length; i++) {
+                    let newHtml = ""
+                    for (let x = start; x < target.length; x++) {
+                      newHtml += /**@type {Function}*/(fns[i])(/**@type {U}*/(target[x]))
+                    }
+                  /**@type {Element}*/(/**@type {ref}*/(parents[i])._element).insertAdjacentHTML("beforeend", newHtml)
+                    const newElements = Array.from(/**@type {Element}*/(/**@type {ref}*/(parents[i])._element).children).slice(start);
+                  /**@type {Array<Element>}*/(elementss[i]).push(...newElements)
+                  }
+                })
+              }
               if (!isMutating) {
                 for (const dependency of [...dependencies]) {
                   if (state.runningEffects.has(dependency)) continue
@@ -127,34 +129,52 @@ export class state {
               * @param {number} start
               * @param {number} deleteCount
               * @param {U[]}
+              * @returns {U[]}
               */
             return (start, deleteCount, ...items) => {
               const prevNested = app.isCurrNested
               app.isCurrNested = true
               const len = target.length
-              if (start < 0) {
+              if (start >= len) {
+                receiver.push(...items)
+                app.isCurrNested = prevNested
+                return []
+              } else if (start < 0) {
                 start = Math.max(len + start, 0)
               }
-              deleteCount = Math.min(Math.max(deleteCount, 0), len - start)
+              if (deleteCount === undefined) {
+                deleteCount = len - start
+              } else {
+                deleteCount = Math.min(
+                  Math.max(deleteCount, 0),
+                  len - start
+                )
+              }
               isMutating = true
               const removed = target.splice(start, deleteCount, ...items)
               isMutating = false
-              const removedElements = elements.splice(start, deleteCount)
-              for (const el of removedElements) {
-                el.remove()
-              }
-              for (let i = 0; i < items.length; i++) {
-                const index = start + i
-                const content = fn(/**@type {U}*/(items[i]))
-                const newHtml = `<${tag} id="pico-array-element">${content}</${tag}>`
-                if (index === 0) {
-                  parent.insertAdjacentHTML("afterbegin", newHtml)
-                  elements.splice(0, 0,/** @type {Element} */(parent.firstElementChild))
-                } else {
-                  const previous = elements[index - 1]
-                  previous?.insertAdjacentHTML("afterend", newHtml)
-                  elements.splice(index, 0,/** @type {Element} */(previous?.nextElementSibling))
-                }
+              if (app.isMounted) {
+                beforeMount(() => {
+                  for (let x = 0; x < parents.length; x++) {
+                    const removedElements = /**@type {Array<Element>}*/(elementss[x]).splice(start, deleteCount)
+                    for (const el of removedElements) {
+                      el.remove()
+                    }
+                    for (let i = 0; i < items.length; i++) {
+                      const index = start + i
+                      const content = /**@type {Function}*/(fns[x])(/**@type {U}*/(items[i]))
+                      const newHtml = content
+                      if (index === 0) {
+                    /**@type {ref}*/(parents[x])?._element?.insertAdjacentHTML("afterbegin", newHtml);
+                    /**@type {Array<Element>}*/(elementss[x]).splice(0, 0,/** @type {Element} */(parents[x]?._element?.firstElementChild))
+                      } else {
+                        const previous = /**@type {Array<Element>}*/(elementss[x])[index - 1]
+                        previous?.insertAdjacentHTML("afterend", newHtml);
+                    /**@type {Array<Element>}*/(elementss[x]).splice(index, 0,/** @type {Element} */(previous?.nextElementSibling))
+                      }
+                    }
+                  }
+                })
               }
               if (!isMutating) {
                 for (const dependency of [...dependencies]) {
@@ -193,7 +213,7 @@ export class state {
           }
           return value.bind(receiver)
         } else if (typeof prop === "string" && prop === "getRenderString") {
-          return `<${tag} id="pico-array-element">`
+          return ``
         } else if (prop === '__unsafe_raw_value' || prop === "value") {
           return target
         } else if (prop === "id") {
@@ -215,21 +235,27 @@ export class state {
         if (prop === "value") {
           target.length = 0
           if (value.length === 0) {
-            parent.replaceChildren()
-            elements.length = 0
+            for (let i = 0; i < parents.length; i++) {
+              parents[i]?._element?.replaceChildren();
+              /**@type {Array<Element>}*/(elementss[i]).length = 0
+            }
           } else {
             target.push(...value)
             const prevNested = app.isCurrNested
             app.isCurrNested = true
-            beforeMount(() => {
-              if (!parent) throw new RenderErrror(`No parent for list with data-pico-list="${id}"`)
-              let html = ""
-              for (let i = 0; i < target.length; i++) {
-                html += `<${tag} id="pico-array-element">${fn(/**@type {U}*/(target[i]))}</${tag}>`
-              }
-              parent.innerHTML = html
-              elements = Array.from(parent.children)
-            })
+            if (app.isMounted) {
+              beforeMount(() => {
+                for (let x = 0; x < parents.length; x++) {
+                  if (!parents[x]) throw new RenderErrror(`No parent for list with data-pico-list="${id}"`)
+                  let html = ""
+                  for (let i = 0; i < target.length; i++) {
+                    html += `${/**@type {Function}*/(fns[x])(/**@type {U}*/(target[i]))}`
+                  }
+                /**@type {Element}*/(/**@type {ref}*/(parents[x])._element).innerHTML = html
+                  elementss[x] = Array.from(/**@type {Element}*/(/**@type {ref}*/(parents[x])._element).children)
+                }
+              })
+            }
             if (!prevNested) {
               for (const cb of app.immediateRenders) {
                 cb()
@@ -244,10 +270,10 @@ export class state {
           }
           mutated = true
         } else if (prop === "fn") {
-          fn = value
+          fns.push(value)
           return true
-        } else if (prop === "tag") {
-          tag = value
+        } else if (prop === "__parents") {
+          parents.push(value)
           return true
         } else if (prop === "__unsafe_raw_value") {
           target.length = 0
@@ -257,31 +283,38 @@ export class state {
           const prevNested = app.isCurrNested
           app.isCurrNested = true
           const index = parseInt(prop)
-          const content = fn(value)
-          beforeMount(() => {
-            const existing = elements[index]
-            if (existing) {
-              existing.innerHTML = content
-            } else {
-              const newHtml = `<${tag} id="pico-array-element">${content}</${tag}>`
-              const prevElement = elements[index - 1]
-              if (prevElement) {
-                prevElement.insertAdjacentHTML("afterend", newHtml)
-                if (index === elements.length) {
-                  elements.push(/**@type {Element}*/(prevElement.nextElementSibling))
+          for (let x = 0; x < parents.length; x++) {
+            const content = /**@type {Function}*/(fns[x])(value)
+            if (app.isMounted) {
+              beforeMount(() => {
+                const existing = /**@type {Array<Element>}*/(elementss[x])[index]
+                if (existing) {
+                  const template = document.createElement("template")
+                  template.innerHTML = content
+                  const replacement = /**@type {Element}*/(template.content.firstElementChild)
+                  existing.replaceChildren(...replacement.childNodes)
                 } else {
-                  elements[index] = /**@type {Element}*/(prevElement.nextElementSibling)
+                  const newHtml = content
+                  const prevElement = /**@type {Array<Element>}*/(elementss[x])[index - 1]
+                  if (prevElement) {
+                    prevElement.insertAdjacentHTML("afterend", newHtml)
+                    if (index === elementss.length) {
+                    /**@type {Array<Element>}*/(elementss[x]).push(/**@type {Element}*/(prevElement.nextElementSibling))
+                    } else {
+                    /**@type {Array<Element>}*/(elementss[x])[index] = /**@type {Element}*/(prevElement.nextElementSibling)
+                    }
+                  } else {
+                    parents[x]?._element?.insertAdjacentHTML("afterbegin", newHtml)
+                    if (index === elementss.length) {
+                    /**@type {Array<Element>}*/(elementss[x]).push(/**@type {Element}*/(/**@type {Element}*/(/**@type {ref}*/(parents[x])._element).firstElementChild))
+                    } else {
+                    /**@type {Array<Element>}*/(elementss[x])[index] = /**@type {Element}*/(/**@type {Element}*/(/**@type {ref}*/(parents[x])._element).firstElementChild)
+                    }
+                  }
                 }
-              } else {
-                parent.insertAdjacentHTML("afterbegin", newHtml)
-                if (index === elements.length) {
-                  elements.push(/**@type {Element}*/(parent.firstElementChild))
-                } else {
-                  elements[index] = /**@type {Element}*/(parent.firstElementChild)
-                }
-              }
+              })
             }
-          })
+          }
           if (!prevNested) {
             for (const cb of app.immediateRenders) {
               cb()
@@ -312,12 +345,16 @@ export class state {
         if (typeof prop === "string" && parseInt(prop).toString() === prop) {
           const prevNested = app.isCurrNested
           app.isCurrNested = true
-          beforeMount(() => {
-            if (elements[parseInt(prop)]) {
-              elements[parseInt(prop)]?.remove()
-              elements.splice(parseInt(prop), 1)
-            }
-          })
+          if (app.isMounted) {
+            beforeMount(() => {
+              for (let x = 0; x < parents.length; x++) {
+                if (/**@type {Array<Element>}*/(elementss[x])[parseInt(prop)]) {
+                /**@type {Array<Element>}*/(elementss[x])[parseInt(prop)]?.remove();
+                /**@type {Array<Element>}*/(elementss[x]).splice(parseInt(prop), 1)
+                }
+              }
+            })
+          }
           if (!prevNested) {
             for (const cb of app.immediateRenders) {
               cb()
@@ -342,7 +379,7 @@ export class state {
         return result
       },
       has(target, prop) {
-        if (prop === "__unsafe_raw_value" || prop === "fn" || prop === "tag" || prop === "value") {
+        if (prop === "__unsafe_raw_value" || prop === "fn" || prop === "__parents" || prop === "value") {
           return true
         }
         return prop in target
@@ -530,7 +567,7 @@ export function html(strings, ...args) {
       str += /** @type {state<unknown>} */ (args[i]).getRenderString();
       /**@type {state<unknown>}*/(args[i])._initialBuildElemets = true
     } else {
-      str += args[i]
+      str += `${args[i]}`
     }
   }
   return str + strings[args.length]
@@ -545,6 +582,10 @@ export class app {
     */
   static immediateRenders = []
   static eventListenerId = 0
+  /** 
+    * @type {Array<()=>unknown>}
+    */
+  static afterMounts = []
   static isMounted = false
   static generatedComponentId = 0
   static listId = 0
@@ -590,6 +631,10 @@ export class app {
       cb()
     }
     app.renderCallbacks = []
+    for (const cb of app.afterMounts) {
+      cb()
+    }
+    app.afterMounts = []
   }
 }
 /**
@@ -603,6 +648,12 @@ export function onMount(cb) {
  */
 export function beforeMount(cb) {
   app.immediateRenders.push(cb)
+}
+/**
+ * @param {()=>unknown} cb 
+ */
+export function afterMount(cb) {
+  app.afterMounts.push(cb)
 }
 /**
  * @param {(e: Event)=>unknown} cb 
@@ -705,6 +756,8 @@ export function bindDblclick(cb, delegated = false) {
     onMount(() => {
       document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("dblclick", cb)
     })
+  } else {
+    app.delegatedEvents[localId] = cb
   }
   return `data-pico-listener="${localId}"`
 }
@@ -795,9 +848,6 @@ export function useFuture(fn, fallbackFn = () => "", placeholderFn = () => "") {
       for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
         el.innerHTML = fallbackFn(err)
       }
-      for (const cb of app.renderCallbacks) {
-        cb()
-      }
       if (!prevNested) {
         for (const cb of app.renderCallbacks) {
           cb()
@@ -814,28 +864,28 @@ export function useFuture(fn, fallbackFn = () => "", placeholderFn = () => "") {
  * @returns {arr is ArrayProxy<T>}
  */
 function isArrayProxy(arr) {
-  return "tag" in arr
+  return "fn" in arr
 }
 /**
  * @template T
  * @param {Iterable<T>} arr 
+ * @param {ref} ref 
  * @param {((item: T)=>string) | undefined} [fn=(x)=>x]
- * @param {string | undefined} [tag="li"]
  * @param {boolean} [delegate=false] 
  * @returns {string}
  */
-export function useEach(arr, fn = (x) => /**@type {string}*/(x), tag = "li", delegate = false) {
+export function useEach(arr, ref, fn = (x) => /**@type {string}*/(x), delegate = false) {
   let finalStr = ""
   if (isArrayProxy(arr)) {
     arr["fn"] = fn
-    arr["tag"] = tag
+    arr["__parents"] = ref
     for (let i = 0; i < arr.length; i++) {
       const res = fn(/**@type {T}*/(arr[i]))
-      finalStr += `<${tag} id="pico-array-element">` + res + `</${tag}>`
+      finalStr += res
     }
     if (delegate) {
-      onMount(() => {
-        document.querySelector(`[data-pico-list="${arr.id}"]`)?.addEventListener("click", (event) => {
+      ref.deref((el) => {
+        el.addEventListener("click", (event) => {
           const el = /**@type {Element}*/(event.target).closest("[data-pico-listener]")
           const listenerId = parseInt(/**@type {string}*/(el?.getAttribute("data-pico-listener")))
           const delegatedEvent = Object.create(event);
@@ -849,16 +899,35 @@ export function useEach(arr, fn = (x) => /**@type {string}*/(x), tag = "li", del
   } else {
     for (const item of arr) {
       const res = fn(item)
-      finalStr += `<${tag}>${res}</${tag}>`
+      finalStr += res
     }
   }
   return finalStr
 }
-/**
- * @template T
- * @param {ArrayProxy<T>} arr 
- * @returns {string}
- */
-export function listId(arr) {
-  return `data-pico-list=${arr.id}`
+export class ref {
+  /**
+   * @param {string} key 
+   */
+  constructor(key) {
+    this.key = key
+    /**
+     * @package
+     */
+    this._element = null
+    onMount(() => {
+      this._element = document.querySelector(`[data-pico-ref="${key}"]`)
+    })
+  }
+  /**
+   * @param {(el: Element)=>unknown} fn 
+   * @returns 
+   */
+  deref(fn) {
+    onMount(() => {
+      fn(/**@type {Element}*/(this._element))
+    })
+  }
+  toString() {
+    return `data-pico-ref="${this.key}"`
+  }
 }
