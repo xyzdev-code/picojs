@@ -10,6 +10,16 @@
 
 const PICO_ARRAY_MUTATORS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin'])
 /**
+ * @type {Set<ref>}
+ */
+const unresolvedRefs = new Set()
+
+function resolveRefs() {
+  for (const r of [...unresolvedRefs]) {
+    r._resolve()
+  }
+}
+/**
  * Defines a reactive object that is tracked by effect, computed etc and automatically updated by pico in the html.
  * @example
  * // returns a reactive number which can be accessed by calling .value
@@ -67,11 +77,6 @@ export class state {
      * @type {Array<ref>}
      */
     const parents = []
-    afterMount(() => {
-      for (let i = 0; i < parents.length; i++) {
-        elementss.push(Array.from(/**@type {Element}*/(parents[i]?._element).children))
-      }
-    })
     /**
      * @type {ProxyHandler<Array<U>>}
      */
@@ -273,7 +278,12 @@ export class state {
           fns.push(value)
           return true
         } else if (prop === "__parents") {
+          const index = parents.length
           parents.push(value)
+          elementss[index] = []
+          value.deref((/**@type {Element}*/el) => {
+            elementss[index] = Array.from(el.children)
+          })
           return true
         } else if (prop === "__unsafe_raw_value") {
           target.length = 0
@@ -619,7 +629,7 @@ export class app {
   constructor(app_component, root) {
     const el = document.querySelector(root)
     if (el === null) {
-      throw new RenderErrror(`Failed to get an html element with property ${root}`)
+      throw new RenderErrror(`Failed to get an html element with selector ${root}`)
     }
     el.innerHTML = app_component()
     for (const cb of app.immediateRenders) {
@@ -627,6 +637,7 @@ export class app {
     }
     app.immediateRenders = []
     app.isMounted = true
+    resolveRefs()
     for (const cb of app.renderCallbacks) {
       cb()
     }
@@ -827,18 +838,34 @@ export function useTry(fn, fallbackFn = () => /**@type {U}*/("")) {
 export function useFuture(fn, fallbackFn = () => "", placeholderFn = () => "") {
   const id = app.generatedComponentId
   app.generatedComponentId++
-  fn()
+  const immediateStart = app.immediateRenders.length
+  const renderStart = app.renderCallbacks.length
+  const afterMountStart = app.afterMounts.length
+  const promise = fn()
+  const renderCallbacks = app.renderCallbacks.splice(renderStart)
+  const afterMounts = app.afterMounts.splice(afterMountStart)
+  const immediateRenders = app.immediateRenders.splice(immediateStart)
+  promise
     .then((value) => {
       const prevNested = app.isCurrNested
       app.isCurrNested = true
       for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
         el.innerHTML = value
       }
+      resolveRefs()
       if (!prevNested) {
-        for (const cb of app.renderCallbacks) {
+        for (const cb of immediateRenders) {
+          cb()
+        }
+        app.immediateRenders = []
+        for (const cb of renderCallbacks) {
           cb()
         }
         app.renderCallbacks = []
+        for (const cb of afterMounts) {
+          cb()
+        }
+        app.afterMounts = []
       }
       app.isCurrNested = prevNested
     })
@@ -909,25 +936,68 @@ export class ref {
    * @param {string} key 
    */
   constructor(key) {
+    /**
+     * @type {Array<(el: Element)=>unknown>}
+     */
+    this._callbacks = []
     this.key = key
     /**
      * @package
      */
     this._element = null
-    onMount(() => {
-      this._element = document.querySelector(`[data-pico-ref="${key}"]`)
-    })
+    unresolvedRefs.add(this)
   }
   /**
    * @param {(el: Element)=>unknown} fn 
-   * @returns 
    */
   deref(fn) {
-    onMount(() => {
-      fn(/**@type {Element}*/(this._element))
-    })
+    if (this._element) {
+      fn(this._element)
+    } else {
+      this._callbacks.push(fn)
+    }
   }
   toString() {
     return `data-pico-ref="${this.key}"`
   }
+  /**
+   * @returns {ref}
+   */
+  static unique() {
+    return new ref(`pico-unique-id-${Date.now()}`)
+  }
+  _resolve() {
+    if (this._element) {
+      return true
+    }
+
+    const element = Array.from(
+      document.querySelectorAll("[data-pico-ref]")
+    ).find(
+      (el) => el.getAttribute("data-pico-ref") === this.key
+    )
+
+    if (!element) {
+      return false
+    }
+
+    this._element = element
+    unresolvedRefs.delete(this)
+
+    const callbacks = this._callbacks
+    this._callbacks = []
+
+    for (const cb of callbacks) {
+      cb(element)
+    }
+
+    return true
+  }
+}
+/**
+ * @param {ref} ref 
+ * @returns {string}
+ */
+export function useRef(ref) {
+  return `data-pico-ref=${ref.key}`
 }
