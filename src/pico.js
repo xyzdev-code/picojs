@@ -839,13 +839,8 @@ export function useTry(fn, fallbackFn = () => /**@type {U}*/("")) {
 export function useFuture(fn, fallbackFn = () => "", placeholderFn = () => "") {
   const id = app.generatedComponentId
   app.generatedComponentId++
-  const immediateStart = app.immediateRenders.length
-  const renderStart = app.renderCallbacks.length
-  const afterMountStart = app.afterMounts.length
+
   const promise = fn()
-  const renderCallbacks = app.renderCallbacks.splice(renderStart)
-  const afterMounts = app.afterMounts.splice(afterMountStart)
-  const immediateRenders = app.immediateRenders.splice(immediateStart)
   promise
     .then((value) => {
       const prevNested = app.isCurrNested
@@ -855,15 +850,15 @@ export function useFuture(fn, fallbackFn = () => "", placeholderFn = () => "") {
       }
       resolveRefs()
       if (!prevNested) {
-        for (const cb of immediateRenders) {
+        for (const cb of app.immediateRenders) {
           cb()
         }
         app.immediateRenders = []
-        for (const cb of renderCallbacks) {
+        for (const cb of app.renderCallbacks) {
           cb()
         }
         app.renderCallbacks = []
-        for (const cb of afterMounts) {
+        for (const cb of app.afterMounts) {
           cb()
         }
         app.afterMounts = []
