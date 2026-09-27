@@ -127,6 +127,7 @@ export class state {
                 app.renderCallbacks = []
               }
               app.isCurrNested = prevNested
+              return result
             }
           } else if (prop === "splice") {
             // Fast path for .splice
@@ -467,7 +468,7 @@ export class state {
         this._initialBuildElemets = false
       }
       for (const el of this._elements) {
-        el.innerHTML = /**@type {string}*/ (this._value)
+        el.textContent = /**@type {string}*/ (this._value)
       }
       if (!prevNested) {
         for (const cb of app.immediateRenders) {
@@ -554,15 +555,15 @@ export function effect(fn) {
 /**
   * @template T
   * @param {()=>T} fn 
-  * @returns {[state<T>, ()=>unknown]}
+  * @returns {state<T>}
   */
 export function computed(fn) {
   const internal_value = /** @type {state<T>} */ (new state(undefined))
-  const dispose = effect(() => {
+  effect(() => {
     internal_value.value = fn()
     return undefined
   })
-  return [internal_value, dispose]
+  return internal_value
 }
 /**
  * @param {TemplateStringsArray} strings 
@@ -966,6 +967,9 @@ export class ref {
   static unique() {
     return new ref(`pico-unique-id-${Date.now()}`)
   }
+  /**
+   * @package
+   */
   _resolve() {
     if (this._element) {
       return true
@@ -1000,4 +1004,75 @@ export class ref {
  */
 export function useRef(ref) {
   return `data-pico-ref=${ref.key}`
+}
+/**
+ * @param {(()=>boolean) | state<boolean>} condition 
+ * @param {()=>string} value 
+ */
+export function useIf(condition, value) {
+  const branches = [
+    {
+      condition: condition instanceof state
+        ? () => condition.value
+        : condition,
+      value
+    }
+  ]
+  /**
+   * @type {undefined | (()=>string)}
+   */
+  let elseValue = undefined
+  function render() {
+    for (const branch of branches) {
+      if (branch.condition()) {
+        return branch.value()
+      }
+    }
+    return elseValue ? elseValue() : ""
+  }
+  let reactive = condition instanceof state
+  /**
+   * @type {state<string> | undefined}
+   */
+  let outputState = undefined
+  return {
+    /**
+     * 
+     * @param {(()=>boolean) | state<boolean>} condition 
+     * @param {()=>string} value 
+     * @returns 
+     */
+    elif(condition, value) {
+      branches.push({
+        condition: condition instanceof state
+          ? () => condition.value
+          : condition,
+        value
+      })
+      if (condition instanceof state && !outputState) {
+        reactive = true
+      }
+      return this
+    },
+    /**
+     * @param {()=>string} value 
+     * @returns 
+     */
+    else(value) {
+      elseValue = value
+      return this
+    },
+    toString() {
+      if (!reactive) {
+        return render()
+      }
+      if (!outputState) {
+        outputState = new state(render())
+        effect(() => {
+          /**@type {state<string>}*/(outputState).value = render()
+        })
+      }
+      return outputState.getRenderString()
+    }
+  }
 }
