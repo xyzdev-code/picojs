@@ -22,7 +22,7 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "prepublishOnly": "tsgo && npx terser ./src/pico.js -c -m -o ./dist/src/pico.min.js && gzip ./dist/src/pico.min.js"
+    "prepublishOnly": "npx tsc && npx terser ./src/pico.js -c -m -o ./dist/src/pico.min.js && gzip ./dist/src/pico.min.js"
   },
   "files": [
     "./dist/src/pico.d.ts",
@@ -32,6 +32,7 @@
     "@eslint/js": "^10.0.1",
     "@html-eslint/eslint-plugin": "^0.64.0",
     "eslint": "^10.8.1",
-    "globals": "^17.9.0"
+    "globals": "^17.9.0",
+    "typescript": "^7.0.2"
   }
 }

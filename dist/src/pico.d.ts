@@ -120,9 +120,9 @@ export declare function effect(fn: () => ((() => unknown) | void)): () => void;
 /**
   * @template T
   * @param {()=>T} fn
-  * @returns {[state<T>, ()=>unknown]}
+  * @returns {state<T>}
   */
-export declare function computed<T>(fn: () => T): [state<T>, () => unknown];
+export declare function computed<T>(fn: () => T): state<T>;
 /**
  * @param {TemplateStringsArray} strings
  * @param {unknown[]} args
@@ -219,15 +219,20 @@ export declare function bindMouseup(cb: (e: Event) => unknown, delegated?: boole
  */
 export declare function bindDblclick(cb: (e: Event) => unknown, delegated?: boolean): string;
 /**
- * @param {(is_checked: boolean)=>unknown} cb
+ * @param {(e: Event)=>unknown} cb
  * @returns {string}
  */
-export declare function bindChecked(cb: (is_checked: boolean) => unknown): string;
+export declare function bindChanged(cb: (e: Event) => unknown): string;
 /**
  * @param {state<string | number>} boundVar
  * @returns {string}
  */
 export declare function bindValue(boundVar: state<string | number>): string;
+/**
+ * @param {(e: SubmitEvent)=>unknown} cb
+ * @returns {string}
+ */
+export declare function bindSubmit(cb: (e: SubmitEvent) => unknown): string;
 /**
  * Optionally takes in some function that may throw or return an error and if an error does occur, it returns a fallback function
  * WARNING: If the fallback function errors it will get called again with err being the error the first call of the fallback throws
@@ -255,6 +260,10 @@ export declare function useFuture(fn: () => Promise<string>, fallbackFn?: ((err:
  */
 export declare function useEach<T>(arr: Iterable<T>, ref: ref, fn?: ((item: T) => string) | undefined, delegate?: boolean): string;
 export declare class ref {
+    /**
+     * @type {Array<(el: Element)=>unknown>}
+     */
+    _callbacks: Array<(el: Element) => unknown>;
     key: string;
     /**
      * @package
@@ -266,8 +275,57 @@ export declare class ref {
     constructor(key: string);
     /**
      * @param {(el: Element)=>unknown} fn
-     * @returns
      */
     deref(fn: (el: Element) => unknown): void;
     toString(): string;
+    /**
+     * @returns {ref}
+     */
+    static unique(): ref;
+    /**
+     * @package
+     */
+    _resolve(): boolean;
 }
+/**
+ * @param {ref} ref
+ * @returns {string}
+ */
+export declare function useRef(ref: ref): string;
+/**
+ * @param {(()=>boolean) | state<boolean>} condition
+ * @param {()=>string} value
+ */
+export declare function useIf(condition: (() => boolean) | state<boolean>, value: () => string): {
+    /**
+     *
+     * @param {(()=>boolean) | state<boolean>} condition
+     * @param {()=>string} value
+     * @returns
+     */
+    elif(condition: (() => boolean) | state<boolean>, value: () => string): {
+        elif(condition: (() => boolean) | state<boolean>, value: () => string): /*elided*/ any;
+        /**
+         * @param {()=>string} value
+         * @returns
+         */
+        else(value: () => string): /*elided*/ any;
+        toString(): string;
+    };
+    /**
+     * @param {()=>string} value
+     * @returns
+     */
+    else(value: () => string): {
+        /**
+         *
+         * @param {(()=>boolean) | state<boolean>} condition
+         * @param {()=>string} value
+         * @returns
+         */
+        elif(condition: (() => boolean) | state<boolean>, value: () => string): any;
+        else(value: () => string): any;
+        toString(): string;
+    };
+    toString(): string;
+};
