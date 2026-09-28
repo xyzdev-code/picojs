@@ -498,6 +498,25 @@ export class state {
     return `<span id="pico-element" class="pico-state-id${this.id} pico-unique-state-id${state.uniqueId}">${this._value}</span>`
   }
 }
+function flushMountCallbacks() {
+  const immediateRenders = app.immediateRenders
+  app.immediateRenders = []
+  for (const cb of immediateRenders) {
+    cb()
+  }
+  app.isMounted = true
+  resolveRefs()
+  const renderCallbacks = app.renderCallbacks
+  app.renderCallbacks = []
+  for (const cb of renderCallbacks) {
+    cb()
+  }
+  const afterMounts = app.afterMounts
+  app.afterMounts = []
+  for (const cb of afterMounts) {
+    cb()
+  }
+}
 export class RenderErrror extends Error { }
 /**
  * Pass in a function which will be reran when its dependencies mutates
@@ -633,20 +652,7 @@ export class app {
       throw new RenderErrror(`Failed to get an html element with selector ${root}`)
     }
     el.innerHTML = app_component()
-    for (const cb of app.immediateRenders) {
-      cb()
-    }
-    app.immediateRenders = []
-    app.isMounted = true
-    resolveRefs()
-    for (const cb of app.renderCallbacks) {
-      cb()
-    }
-    app.renderCallbacks = []
-    for (const cb of app.afterMounts) {
-      cb()
-    }
-    app.afterMounts = []
+    flushMountCallbacks()
   }
 }
 /**
@@ -774,18 +780,14 @@ export function bindDblclick(cb, delegated = false) {
   return `data-pico-listener="${localId}"`
 }
 /**
- * @param {(is_checked: boolean)=>unknown} cb 
+ * @param {(e: Event)=>unknown} cb 
  * @returns {string}
  */
-export function bindChecked(cb) {
+export function bindChanged(cb) {
   const localId = app.eventListenerId
   app.eventListenerId += 1
   onMount(() => {
-    document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("change", (event) => {
-      if (/**@type {HTMLInputElement}*/(event.target).checked) {
-        cb(/**@type {HTMLInputElement}*/(event.target).checked)
-      }
-    })
+    document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("change", cb)
   })
   return `data-pico-listener="${localId}"`
 }
@@ -803,6 +805,20 @@ export function bindValue(boundVar) {
       } else {
         boundVar.value = parseFloat(/**@type {HTMLInputElement}*/(event.target).value)
       }
+    })
+  })
+  return `data-pico-listener="${localId}"`
+}
+/**
+ * @param {(e: SubmitEvent)=>unknown} cb 
+ * @returns {string}
+ */
+export function bindSubmit(cb) {
+  const localId = app.eventListenerId
+  app.eventListenerId += 1
+  onMount(() => {
+    document.querySelector(`[data-pico-listener="${localId}"]`)?.addEventListener("submit", (event) => {
+      cb(/**@type {SubmitEvent}*/(event))
     })
   })
   return `data-pico-listener="${localId}"`
@@ -848,20 +864,8 @@ export function useFuture(fn, fallbackFn = () => "", placeholderFn = () => "") {
       for (const el of document.querySelectorAll(`.pico-generated-id${id}`)) {
         el.innerHTML = value
       }
-      resolveRefs()
       if (!prevNested) {
-        for (const cb of app.immediateRenders) {
-          cb()
-        }
-        app.immediateRenders = []
-        for (const cb of app.renderCallbacks) {
-          cb()
-        }
-        app.renderCallbacks = []
-        for (const cb of app.afterMounts) {
-          cb()
-        }
-        app.afterMounts = []
+        flushMountCallbacks()
       }
       app.isCurrNested = prevNested
     })
@@ -872,10 +876,7 @@ export function useFuture(fn, fallbackFn = () => "", placeholderFn = () => "") {
         el.innerHTML = fallbackFn(err)
       }
       if (!prevNested) {
-        for (const cb of app.renderCallbacks) {
-          cb()
-        }
-        app.renderCallbacks = []
+        flushMountCallbacks()
       }
       app.isCurrNested = prevNested
     })
